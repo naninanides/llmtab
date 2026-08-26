@@ -40,6 +40,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Force SVG icons to inherit text color */
+span svg {
+  fill: currentColor;
+}
+
 /* Heatmap 5-step scale (StyleGuide §2) */
 .heatmap-cell.step-0 { background: #ebedf0; }
 .heatmap-cell.step-1 { background: #9be9a8; }

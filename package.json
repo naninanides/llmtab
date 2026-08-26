@@ -31,6 +31,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@lobehub/icons": "^5.16.0",
+    "@lobehub/icons-static-svg": "^1.94.0",
+    "@napi-rs/canvas": "^1.0.8",
     "commander": "^14.0.0"
   },
   "devDependencies": {

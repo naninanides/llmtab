@@ -10,6 +10,7 @@ import {
 } from "electron";
 import type { DatabaseSync } from "node:sqlite";
 import { readConfig, writeConfig } from "../shared/config.js";
+import { createCanvas } from "@napi-rs/canvas";
 
 /**
  * LLMTab menu-bar shell (PRD FR-50…55).
@@ -149,17 +150,14 @@ function rebuildMenu(
   }
   const today = lastToday;
   const mb = readMenuBarConfig();
-  const titleLabel =
+  const titleLines: string[] =
     today && today.tokens > 0
-      ? `Today: ${compact(today.tokens)} tokens · $${today.costUsd.toFixed(2)} est.`
+      ? [`Today: ${compact(today.tokens)} tokens`, `$${today.costUsd.toFixed(2)} est.`]
       : today
-        ? "Today: no usage yet"
-        : "Loading…";
+        ? ["Today: no usage yet"]
+        : ["Loading…"];
   const template: MenuItemConstructorOptions[] = [
-    {
-      label: titleLabel,
-      enabled: false,
-    },
+    ...titleLines.map((label) => ({ label, enabled: false as const })),
     ...(today?.perTool ?? []).map<MenuItemConstructorOptions>((t) => ({
       label: `   ${labelForTool(t.tool)} — ${compact(t.totalTokens)}`,
       enabled: false,
@@ -385,14 +383,56 @@ function applyTrayTitle(tokens: number, cost: number, perTool: Array<{ tool: str
     tray.setTitle("");
     return;
   }
-  const title = formatTrayTitle(tokens, cost, perTool, mb);
-  // setTitle is macOS-only; on other platforms it's a no-op but harmless.
-  // "monospaced" renders a smaller fixed-width variant, keeping the strip compact.
-  try {
-    tray.setTitle(title, { fontType: "monospaced" });
-  } catch {
-    // older Electron or non-macOS may throw
-  }
+  // Render as custom image icon for smaller font size (matches reference ~9px)
+  const icon = renderTrayIcon(tokens, cost, perTool, mb);
+  tray.setImage(icon);
+}
+
+function renderTrayIcon(
+  tokens: number,
+  cost: number,
+  perTool: Array<{ tool: string; totalTokens: number }>,
+  mb: MenuBarConfig,
+): Electron.NativeImage {
+  const text = formatTrayTitle(tokens, cost, perTool, mb);
+  const lines = text.split("\n");
+  const fontSize = 9;
+  const lineHeight = 11;
+  const iconSize = 14;
+  const iconPadding = 2;
+  const textPadding = 4;
+  const width = iconSize + iconPadding + textPadding + 22;
+  const height = Math.max(iconSize, lines.length * lineHeight + textPadding * 2);
+
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "transparent";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+
+  // Draw bar chart icon (3 bars) on the left
+  const iconY = (height - iconSize) / 2;
+  const barWidth = 3;
+  const barGap = 1;
+  const barHeights = [6, 10, 14];
+  let barX = 2;
+  barHeights.forEach((h) => {
+    ctx.fillRect(barX, iconY + iconSize - h, barWidth, h);
+    barX += barWidth + barGap;
+  });
+
+  // Draw stacked text on the right
+  ctx.font = `${fontSize}px "SF Mono", "Menlo", monospace`;
+  ctx.textBaseline = "top";
+  const textX = iconSize + iconPadding;
+  lines.forEach((line, i) => {
+    ctx.fillText(line, textX, textPadding + i * lineHeight);
+  });
+
+  const png = canvas.toBuffer("image/png");
+  const img = nativeImage.createFromBuffer(png);
+  img.setTemplateImage(true);
+  return img;
 }
 
 function formatTrayTitle(
@@ -416,12 +456,13 @@ function formatTrayTitle(
     const parts = rows.map((r) => `${TOOL_SHORT[r.tool] ?? r.tool.slice(0, 2).toUpperCase()} ${compact(r.totalTokens)}`);
     // If only one tool has data, append total so strip isn't empty
     if (rows.length === 1 && perTool.length === 1) {
-      return showCost ? `${parts[0]} · $${cost.toFixed(2)}` : parts[0] ?? "";
+      return showCost ? `${parts[0]}\n$${Math.round(cost)}` : parts[0] ?? "";
     }
-    return parts.join(" · ");
+    return parts.join("\n");
   }
-  // Compact: single total + optional cost (Text style: provider icon + values)
-  return showCost ? `${compact(tokens)} · $${cost.toFixed(2)}` : compact(tokens);
+  // Compact: single total + optional cost — stacked (tokens above, cost below) with small mono font
+  // Shortened format: 57M (no decimal), $3 (no cents) to reduce width
+  return showCost ? `${compactShort(tokens)}\n$${Math.round(cost)}` : compactShort(tokens);
 }
 
 function labelForTool(tool: string): string {
@@ -448,6 +489,13 @@ function compact(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(n);
+}
+
+function compactShort(n: number): string {
+  if (n >= 1e9) return `${Math.round(n / 1e9)}B`;
+  if (n >= 1e6) return `${Math.round(n / 1e6)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
   return String(n);
 }
 
