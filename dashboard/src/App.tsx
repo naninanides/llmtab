@@ -1,377 +1,627 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { RangeProvider } from "@/hooks/useRange";
-import { useAsync } from "@/hooks/useAsync";
-import { api, type RangeDef, type ToolRow } from "@/api";
-import { compact, cost } from "@/format";
+import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { RangeProvider, useRange } from "@/hooks/useRange";
+import { useAsync, Skeleton } from "@/hooks/useAsync";
+import { api, rangeParam, type DayRow, type ModelRow, type RangeDef, type SummaryResponse, type ToolRow } from "@/api";
+import { compact, cost, percent } from "@/format";
+import { HeroCard, ModelCards, RangeTabs, StatCard } from "@/components/Cards";
+import { TrendChart } from "@/components/TrendChart";
+import { Heatmap } from "@/components/Heatmap";
+import { DailyTable } from "@/components/DailyTable";
+import { ProjectList, ToolBreakdown } from "@/components/ToolProject";
+import { SyncFooter } from "@/components/SyncFooter";
+
+const IS_ELECTRON = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+
+type Period = "today" | "7d" | "30d";
+type View = "popover" | "dashboard";
+
+const RANGE_FOR: Record<Period, RangeDef> = {
+  today: { kind: "today" },
+  "7d": { kind: "7d" },
+  "30d": { kind: "30d" },
+};
+
+const CAPTION: Record<Period, string> = {
+  today: "Today total usage",
+  "7d": "7d total usage",
+  "30d": "30d total usage",
+};
+
+const LOCAL_TOOLS = new Set(["ollama"]);
 
 export default function App(): ReactNode {
-  // Popover is always dark like OpenUsage screenshot
-  useEffect(() => {
-    document.documentElement.classList.add("dark");
-    localStorage.setItem("llmtab-theme", "dark");
-  }, []);
+  const [view, setView] = useState<View>(() =>
+    window.location.pathname.startsWith("/dashboard") ? "dashboard" : "popover",
+  );
 
   return (
     <RangeProvider>
-      <div className="min-h-screen bg-[#0e0e0e] text-white antialiased">
-        <div className="mx-auto max-w-[400px] px-3 py-3">
-          <PopoverDashboard />
+      {view === "popover" ? (
+        <div className="min-h-screen w-full bg-gradient-to-b from-[#b4cdf4] via-[#92b3ee] to-[#6f9ce9]">
+          <div className="mx-auto max-w-[360px] p-2">
+            <PopoverView onOpenDashboard={() => setView("dashboard")} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="min-h-screen w-full bg-[#eef2f9]">
+          <div className="mx-auto max-w-page px-6 py-6">
+            <DashboardView onBack={() => setView("popover")} />
+          </div>
+        </div>
+      )}
     </RangeProvider>
   );
 }
 
-function PopoverDashboard(): ReactNode {
-  const summary = useAsync(() => api.summary({ kind: "30d" }), []);
-  const daily = useAsync(() => api.daily({ kind: "30d" }), []);
-  const toolsAll = useAsync(() => api.tools({ kind: "30d" }), []);
-  const last = useAsync(() => api.lastSync(), []);
+function deltaPct(cur: number | undefined, prev: number | undefined): number | null {
+  if (cur === undefined || prev === undefined || prev <= 0) return null;
+  return ((cur - prev) / prev) * 100;
+}
 
-  const err = summary.error ?? daily.error ?? toolsAll.error;
-  if (err) {
-    return <p className="py-8 text-center text-sm text-red-400">{err}</p>;
+/* ── Popover (reference design) ─────────────────────────────────────── */
+
+function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): ReactNode {
+  const [period, setPeriod] = useState<Period>("7d");
+  const [syncing, setSyncing] = useState(false);
+  const [tab, setTab] = useState<"sources" | "models">(() =>
+    window.location.hash === "#models" ? "models" : "sources",
+  );
+  const range = RANGE_FOR[period];
+  const key = rangeParam(range);
+  const summary = useAsync(() => api.summary(range), [key]);
+  const daily = useAsync(() => api.daily(range), [key]);
+  const tools = useAsync(() => api.tools(range), [key]);
+  const models = useAsync(() => api.models(range), [key]);
+
+  const s = summary.data;
+  const err = summary.error ?? daily.error ?? tools.error ?? models.error;
+  const toolRows = tools.data?.tools ?? [];
+  const total = s?.totalTokens ?? 0;
+  const localTokens = toolRows.filter((t) => LOCAL_TOOLS.has(t.tool)).reduce((a, t) => a + t.totalTokens, 0);
+  const cloudRows = toolRows.filter((t) => !LOCAL_TOOLS.has(t.tool));
+  const cloudTokens = cloudRows.reduce((a, t) => a + t.totalTokens, 0);
+  const cloudCost = cloudRows.reduce((a, t) => a + t.costUsd, 0);
+  const trend = deltaPct(s?.totalTokens, s?.previous?.totalTokens);
+  const cloudDelta = deltaPct(s?.costUsd, s?.previous?.costUsd);
+
+  async function syncNow(): Promise<void> {
+    setSyncing(true);
+    try {
+      await api.sync();
+      summary.reload();
+      daily.reload();
+      tools.reload();
+      models.reload();
+    } catch {
+      // sync failures surface via the refreshed data / tray; keep the popover calm
+    } finally {
+      setSyncing(false);
+    }
   }
-  if (summary.loading && !summary.data) {
-    return (
-      <div className="space-y-3">
-        <div className="h-64 animate-pulse rounded-xl bg-[#1e1e1e]" />
-        <div className="h-48 animate-pulse rounded-xl bg-[#1e1e1e]" />
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-3">
-      <CostCard />
-      {/* Per-tool quota cards — mirrors OpenUsage: OpenCode + Claude */}
-      {toolsAll.data?.tools && toolsAll.data.tools.length > 0 ? (
-        toolsAll.data.tools.slice(0, 4).map((t) => (
-          <QuotaCard key={t.tool} tool={t} allTools={toolsAll.data!.tools} daily={daily.data?.days ?? []} />
-        ))
-      ) : (
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] p-4">
-          <p className="text-sm text-[#8b949e]">No usage yet. Run llmtab sync.</p>
-        </div>
-      )}
-      <PopoverFooter lastSync={last.data?.lastSync ?? null} />
-    </div>
-  );
-}
-
-/* ── Cost card ── Top of screenshot: Cost v ⓘ + Today/Yesterday/30 Days + donut */
-
-type Period = "today" | "yesterday" | "30d";
-function rangeForPeriod(p: Period): RangeDef {
-  if (p === "today") return { kind: "today" };
-  if (p === "30d") return { kind: "30d" };
-  const now = new Date();
-  const todayMid = new Date(now);
-  todayMid.setHours(0, 0, 0, 0);
-  const yestMid = new Date(todayMid.getTime() - 24 * 3600_000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { kind: "custom", from: fmt(yestMid), to: fmt(todayMid) };
-}
-
-const TOOL_COLORS: Record<string, string> = {
-  "claude-code": "#d97757",
-  codex: "#10a37f",
-  "gemini-cli": "#4285f4",
-  zcode: "#e07a5f",
-  opencode: "#38bdf8",
-  ollama: "#f59e0b",
-};
-const FALLBACK_COLORS = ["#8b5cf6", "#06b6d4", "#ec4899", "#eab308"];
-
-function colorFor(tool: string, idx: number): string {
-  return TOOL_COLORS[tool] ?? FALLBACK_COLORS[idx % FALLBACK_COLORS.length]!;
-}
-function labelForTool(tool: string): string {
-  const m: Record<string, string> = {
-    "claude-code": "Claude",
-    codex: "Codex",
-    "gemini-cli": "Gemini",
-    zcode: "ZCode",
-    opencode: "OpenCode",
-    ollama: "Ollama",
-  };
-  return m[tool] ?? tool;
-}
-
-function CostCard(): ReactNode {
-  const [period, setPeriod] = useState<Period>("30d");
-  const [tools, setTools] = useState<ToolRow[] | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .tools(rangeForPeriod(period))
-      .then((r) => {
-        if (!cancelled) setTools(r.tools);
-      })
-      .catch(() => {
-        if (!cancelled) setTools([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [period]);
-
-  const grandCost = tools?.reduce((a, t) => a + t.costUsd, 0) ?? 0;
-  const grandTokens = tools?.reduce((a, t) => a + t.totalTokens, 0) ?? 0;
-  const hasData = tools !== null && tools.length > 0 && (grandCost > 0 || grandTokens > 0);
-  const sorted = tools ? [...tools].sort((a, b) => b.costUsd - a.costUsd) : [];
-
-  return (
-    <section className="rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] p-3">
-      {/* Header: Cost v ⓘ  + copy */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-sm font-semibold">Cost</span>
-        <span className="text-xs text-[#8b949e]">▾</span>
-        <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full border border-[#3a3a3a] text-[10px] text-[#8b949e]">ⓘ</span>
-        <button
-          aria-label="Copy"
-          className="ml-auto text-[#8b949e] hover:text-white"
-          onClick={() => {
-            const text = `${compact(grandTokens)} tokens · ${cost(grandCost, { est: true })}`;
-            void navigator.clipboard.writeText(text).catch(() => {});
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-            <rect x="9" y="9" width="13" height="13" rx="2" />
-            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v3" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Pill tabs */}
-      <div className="mt-2 flex justify-center">
-        <div className="inline-flex gap-0 rounded-full bg-[#0e0e0e] p-1">
-          {(["today", "yesterday", "30d"] as Period[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`rounded-full px-3.5 py-1 text-xs font-medium transition-colors ${period === p ? "bg-[#2a2a2a] text-white" : "text-[#8b949e] hover:text-white"}`}
-            >
-              {p === "today" ? "Today" : p === "yesterday" ? "Yesterday" : "30 Days"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-3">
-        {loading ? (
-          <div className="flex justify-center py-6">
-            <div className="h-28 w-28 animate-pulse rounded-full bg-[#2a2a2a]" />
-          </div>
-        ) : !hasData ? (
-          <p className="py-6 text-center text-sm text-[#8b949e]">No spend in this period.</p>
-        ) : (
-          <div className="flex items-center gap-3">
-            {/* Legend left: dots + names */}
-            <div className="flex flex-1 flex-col gap-1 text-xs">
-              {sorted.slice(0, 3).map((t, i) => (
-                <span key={t.tool} className="flex items-center gap-1.5 truncate">
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: colorFor(t.tool, i) }} />
-                  <span className="truncate text-[#e6edf3]">{labelForTool(t.tool)}</span>
-                </span>
-              ))}
-            </div>
-            <Donut tools={sorted} centerTop={`${cost(grandCost, { est: true })}`} centerBottom="dollars" />
-            {/* Legend right: percentages */}
-            <div className="flex flex-1 flex-col gap-1 text-right text-xs">
-              {sorted.slice(0, 3).map((t) => {
-                const pct = grandCost > 0 ? (t.costUsd / grandCost) * 100 : 0;
-                return (
-                  <span key={t.tool} className="tabular-nums text-[#8b949e]">
-                    {pct >= 0.5 ? `${pct.toFixed(0)}%` : "0%"}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function Donut({ tools, centerTop, centerBottom }: { tools: ToolRow[]; centerTop: string; centerBottom: string }): ReactNode {
-  const total = tools.reduce((a, t) => a + t.costUsd, 0) || 1;
-  const size = 120;
-  const r = 46;
-  const stroke = 16;
-  const c = 2 * Math.PI * r;
-  let offset = 0;
-  const segs = tools
-    .filter((t) => t.costUsd > 0)
-    .map((t, i) => {
-      const frac = t.costUsd / total;
-      const len = c * frac;
-      const dash = `${len} ${c - len}`;
-      const seg = (
-        <circle
-          key={t.tool}
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={colorFor(t.tool, i)}
-          strokeWidth={stroke}
-          strokeDasharray={dash}
-          strokeDashoffset={-offset}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      );
-      offset += len;
-      return seg;
-    });
-
-  return (
-    <div className="relative shrink-0">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#2a2a2a" strokeWidth={stroke} />
-        {segs}
-      </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="text-[15px] font-bold tabular-nums leading-none">{centerTop}</span>
-        <span className="text-[10px] font-medium uppercase tracking-wide text-[#8b949e]">{centerBottom}</span>
-      </div>
-    </div>
-  );
-}
-
-/* ── Per-tool quota card ── matches OpenCode / Claude blocks in screenshot */
-
-function QuotaCard({ tool, allTools, daily }: { tool: ToolRow; allTools: ToolRow[]; daily: Array<{ day: string; totalTokens: number }> }): ReactNode {
-  const isClaude = tool.tool === "claude-code";
-  const [open, setOpen] = useState(!isClaude); // OpenCode open by default like screenshot
-
-  // Mock quota percentages derived from real share so bars move with data
-  const grand = allTools.reduce((a, t) => a + t.costUsd, 0) || 1;
-  const share = tool.costUsd / grand;
-  // Session/Weekly remaining — inverse of share, clamped like screenshot 83% etc.
-  const sessionLeft = Math.max(12, Math.min(99, Math.round(100 - share * 18 - Math.random() * 4)));
-  const weeklyLeft = Math.max(12, Math.min(99, Math.round(100 - share * 14 - Math.random() * 4)));
-  const monthlyLeft = Math.max(80, Math.min(99, Math.round(97 + (1 - share) * 2)));
-  const sessionColor = tool.tool === "opencode" ? "#38bdf8" : "#3b82f6";
-  const weeklyColor = tool.tool === "opencode" ? "#f97316" : "#3b82f6";
-
-  // Sparkline data — from daily total prop scaled by tool share, fallback to synthetic
-  const bars = daily.length > 0
-    ? daily
-        .slice(0, 30)
-        .reverse()
-        .map((d) => Math.max(2, Math.round((d.totalTokens * share) / 4000)))
-    : Array.from({ length: 24 }, () => Math.floor(Math.random() * 10) + 2);
-
-  const headerLeft = isClaude ? "✳ Claude" : "▢ OpenCode";
-  const plan = isClaude ? "Team 5x" : "Go";
-  const subtitle = isClaude ? "Outdated" : "Status";
-  const costLabel = `${cost(tool.costUsd, { est: true })}`;
-
-  return (
-    <section className="rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] p-3">
-      {/* Header row */}
-      <div className="flex items-center gap-1.5 text-sm">
-        <span className="font-semibold">{headerLeft}</span>
-        <span className="text-xs text-[#8b949e]">{plan}</span>
-        <span className="text-xs text-[#8b949e]">{subtitle}</span>
-        {isClaude && <span className="text-xs">⚠️</span>}
-        <span className="ml-auto text-xs tabular-nums text-[#8b949e]">
-          {sessionLeft}% · {costLabel}
-        </span>
-      </div>
-
-      <div className="mt-3 space-y-3">
-        <QuotaRow label="Session" left={`${sessionLeft}% left`} right="Resets soon" pct={sessionLeft} color={sessionColor} />
-        <QuotaRow label="Weekly" left={`${weeklyLeft}% left`} right={isClaude ? "Resets in 3d 6h" : "Resets in 4d 6h"} pct={weeklyLeft} color={weeklyColor} />
-        {isClaude ? (
-          <QuotaRow label="Monthly" left={`${monthlyLeft}% left`} right="Resets in 19d 16h" pct={monthlyLeft} color="#3b82f6" />
-        ) : (
-          <QuotaRow label="Extra Usage" left="—" right="No data" pct={0} color="#2a2a2a" empty />
-        )}
-
-        <div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#e6edf3]">Usage Trend</span>
-            <span className="flex-1" />
-            <Sparkline bars={bars} />
-          </div>
-          <button onClick={() => setOpen((v) => !v)} className="mt-1 flex w-full justify-center text-[#8b949e]">
-            <span className={`text-xs transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+    <div className="rounded-3xl border border-white/50 bg-white/25 shadow-2xl backdrop-blur-xl">
+      {err ? (
+        <div className="p-5 text-center">
+          <p className="text-sm font-medium text-rose-900">{err}</p>
+          <button
+            onClick={() => {
+              summary.reload();
+              daily.reload();
+              tools.reload();
+              models.reload();
+            }}
+            className="mt-3 rounded-full bg-white/70 px-4 py-1.5 text-sm font-semibold text-slate-900 hover:bg-white"
+          >
+            Retry
           </button>
-          {open && (
-            <div className="mt-2 space-y-1 border-t border-[#2a2a2a] pt-2 text-xs">
-              <div className="flex justify-between tabular-nums">
-                <span className="text-[#e6edf3]">Today</span>
-                <span className="text-[#8b949e]">{cost(tool.costUsd * 0.08, { est: true })} · {compact(Math.round(tool.totalTokens * 0.9))} tokens</span>
+        </div>
+      ) : (
+        <>
+          <div className="px-4 pt-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-[38px] font-bold leading-none tracking-tight text-slate-900">
+                  {s ? compact(total) : "—"}
+                </div>
+                <div className="mt-1 text-lg font-semibold leading-none text-slate-800">tokens</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                    {CAPTION[period]}
+                  </span>
+                  {trend !== null && <TrendBadge pct={trend} />}
+                </div>
               </div>
-              <div className="flex justify-between tabular-nums">
-                <span className="text-[#e6edf3]">Yesterday</span>
-                <span className="text-[#8b949e]">$0.00 · 14K tokens</span>
+              <PeriodToggle period={period} onChange={setPeriod} />
+            </div>
+          </div>
+
+          <div className="mt-1 h-10">
+            <HeroChart days={daily.data?.days ?? []} />
+          </div>
+
+          <div className="border-t border-white/40 px-3 py-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-2xl border border-white/40 bg-white/30 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-800">Local Est.</span>
+                  <IconCpu size={14} className="shrink-0 text-slate-500" />
+                </div>
+                <div className="mt-2 truncate text-[22px] font-bold leading-none tracking-tight text-slate-900">
+                  {tools.loading && !tools.data ? "—" : compact(localTokens)}
+                </div>
+                <div className="mt-1.5 text-[11px] text-slate-600">~{percent(localTokens, total)} of total</div>
               </div>
-              <div className="flex justify-between tabular-nums">
-                <span className="text-[#e6edf3]">Last 30 Days</span>
-                <span className="text-[#8b949e]">{cost(tool.costUsd, { est: true })} · {compact(tool.totalTokens)} tokens</span>
+              <div className="rounded-2xl border border-white/40 bg-white/30 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-800">Cloud API</span>
+                  <IconCloud size={14} className="shrink-0 text-slate-500" />
+                </div>
+                <div className="mt-2 truncate text-[22px] font-bold leading-none tracking-tight text-slate-900">
+                  {tools.loading && !tools.data ? "—" : compact(cloudTokens)}
+                </div>
+                <div className="mt-1.5 flex items-start justify-between gap-1 text-[11px] text-slate-600">
+                  <span>{cost(cloudCost, { est: true })} est. cost</span>
+                  {cloudDelta !== null && <CostDelta pct={cloudDelta} />}
+                </div>
               </div>
             </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
 
-function QuotaRow({ label, left, right, pct, color, empty }: { label: string; left: string; right: string; pct: number; color: string; empty?: boolean }): ReactNode {
-  return (
-    <div>
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-[#e6edf3]">{label}</span>
-      </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#2a2a2a]">
-        {!empty && <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />}
-      </div>
-      <div className="mt-1 flex justify-between text-xs tabular-nums">
-        <span className="text-[#e6edf3]">{left}</span>
-        <span className="text-[#8b949e]">{right}</span>
-      </div>
+            <div className="mt-2 rounded-2xl border border-white/40 bg-white/30 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex rounded-full bg-white/30 p-0.5">
+                  {(["sources", "models"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setTab(t)}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                        tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-700 hover:text-slate-900"
+                      }`}
+                    >
+                      {t === "sources" ? "Top Sources" : "Top Models"}
+                    </button>
+                  ))}
+                </div>
+                {tab === "sources" ? (
+                  <IconTerminal size={14} className="shrink-0 text-slate-500" />
+                ) : (
+                  <IconBrain size={14} className="shrink-0 text-slate-500" />
+                )}
+              </div>
+
+              {tab === "sources" ? (
+                toolRows.length === 0 ? (
+                  <p className="py-3 text-center text-xs text-slate-600">
+                    {tools.loading ? "Loading…" : "No usage in this period yet."}
+                  </p>
+                ) : (
+                  <ul className="mt-1.5">
+                    {[...toolRows]
+                      .sort((a, b) => b.totalTokens - a.totalTokens)
+                      .slice(0, 3)
+                      .map((t) => (
+                        <TopSourceRow key={t.tool} tool={t} />
+                      ))}
+                  </ul>
+                )
+              ) : (models.data?.models.length ?? 0) > 0 ? (
+                <ul className="mt-1.5 space-y-2">
+                  {[...models.data!.models]
+                    .sort((a, b) => b.totalTokens - a.totalTokens)
+                    .slice(0, 3)
+                    .map((m, i) => (
+                      <TopModelRow key={m.model} model={m} idx={i} total={total} />
+                    ))}
+                </ul>
+              ) : (
+                <p className="py-3 text-center text-xs text-slate-600">
+                  {models.loading ? "Loading…" : "No models in this period yet."}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t border-white/40 px-3 py-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                onClick={() => void syncNow()}
+                disabled={syncing}
+                className="flex items-center justify-center gap-2 rounded-full bg-white/60 py-2 text-[13px] font-semibold text-slate-900 transition hover:bg-white/85 disabled:cursor-wait disabled:opacity-60"
+              >
+                <IconRefresh size={14} className={syncing ? "animate-spin" : ""} />
+                {syncing ? "Syncing…" : "Sync Now"}
+              </button>
+              <button
+                onClick={onOpenDashboard}
+                className="flex items-center justify-center gap-2 rounded-full bg-white/60 py-2 text-[13px] font-semibold text-slate-900 transition hover:bg-white/85"
+              >
+                <IconGrid size={14} /> Dashboard
+              </button>
+            </div>
+            <div className="mt-2.5 flex items-center justify-between px-1">
+              <button
+                onClick={() => window.open(`${window.location.origin}/dashboard`, "_blank")}
+                className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700 transition hover:text-slate-900"
+              >
+                <IconExternal size={13} /> Open Web App
+              </button>
+              {IS_ELECTRON && (
+                <button
+                  onClick={() => window.close()}
+                  className="text-[13px] font-medium text-slate-700 transition hover:text-slate-900"
+                >
+                  Quit
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function Sparkline({ bars }: { bars: number[] }): ReactNode {
-  const max = Math.max(...bars, 1);
+function PeriodToggle({ period, onChange }: { period: Period; onChange: (p: Period) => void }): ReactNode {
   return (
-    <div className="flex h-6 items-end gap-[2px]">
-      {bars.slice(-28).map((v, i) => (
-        <div key={i} className="w-[3px] rounded-sm bg-[#3b82f6]" style={{ height: `${Math.max(2, (v / max) * 20)}px`, opacity: v < 3 ? 0.35 : 1 }} />
+    <div className="flex shrink-0 rounded-full border border-white/50 bg-white/30 p-1">
+      {(["today", "7d", "30d"] as Period[]).map((p) => (
+        <button
+          key={p}
+          onClick={() => onChange(p)}
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            period === p ? "bg-white text-slate-900 shadow-sm" : "text-slate-700 hover:text-slate-900"
+          }`}
+        >
+          {p === "today" ? "Today" : p}
+        </button>
       ))}
     </div>
   );
 }
 
-function PopoverFooter({ lastSync }: { lastSync: { finishedAt: string } | null }): ReactNode {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-  const mins = lastSync ? Math.max(0, Math.round((now - new Date(lastSync.finishedAt).getTime()) / 60000)) : 3;
-  const nextIn = Math.max(1, 5 - (mins % 5));
+function TrendBadge({ pct }: { pct: number }): ReactNode {
+  const up = pct >= 0;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md bg-slate-800/90 px-1.5 py-0.5 text-[11px] font-semibold text-white"
+      title="vs previous equal-length period"
+    >
+      {up ? <IconArrowUpRight size={11} /> : <IconArrowDownRight size={11} />}
+      {Math.abs(Math.round(pct))}%
+    </span>
+  );
+}
+
+function CostDelta({ pct }: { pct: number }): ReactNode {
+  const up = pct >= 0;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold ${up ? "text-rose-600" : "text-emerald-600"}`}
+      title="cost vs previous equal-length period"
+    >
+      <svg width="7" height="7" viewBox="0 0 24 24" className={up ? "" : "rotate-180"} aria-hidden="true">
+        <path d="M12 5l8 14H4z" fill="currentColor" />
+      </svg>
+      {Math.abs(Math.round(pct))}%
+    </span>
+  );
+}
+
+function TopSourceRow({ tool }: { tool: ToolRow }): ReactNode {
+  const meta = TOOL_META[tool.tool];
+  const Icon = meta?.Icon ?? IconTerminal;
+  const isLocal = LOCAL_TOOLS.has(tool.tool);
+  return (
+    <li className="flex items-center gap-2.5 py-1.5">
+      <Icon size={15} className="shrink-0 text-slate-700" />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
+        {meta?.label ?? tool.tool}
+      </span>
+      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-slate-900">
+        {compact(tool.totalTokens)}
+        {isLocal && <span className="ml-1 text-[11px] font-normal text-slate-500">local</span>}
+      </span>
+    </li>
+  );
+}
+
+const MODEL_BAR_COLORS = ["#34d399", "#38bdf8", "#2dd4bf", "#a78bfa", "#f59e0b"];
+
+function TopModelRow({ model, idx, total }: { model: ModelRow; idx: number; total: number }): ReactNode {
+  const pct = total > 0 ? Math.min(100, (model.totalTokens / total) * 100) : 0;
+  return (
+    <li>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800" title={model.model}>
+          {model.model}
+        </span>
+        <span className="shrink-0 text-[13px] font-semibold tabular-nums text-slate-600">
+          {percent(model.totalTokens, total)}
+        </span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/40">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${pct}%`, background: MODEL_BAR_COLORS[idx % MODEL_BAR_COLORS.length] }}
+        />
+      </div>
+      <div className="mt-0.5 text-right text-[11px] text-slate-600">{cost(model.costUsd, { est: true })} est.</div>
+    </li>
+  );
+}
+
+function HeroChart({ days }: { days: DayRow[] }): ReactNode {
+  const ordered = [...days].sort((a, b) => a.day.localeCompare(b.day)).map((d) => ({ tokens: d.totalTokens }));
+  const data = ordered.length === 0 ? [{ tokens: 0 }, { tokens: 0 }] : ordered.length === 1 ? [ordered[0]!, ordered[0]!] : ordered;
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+        <defs>
+          <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0f172a" stopOpacity={0.16} />
+            <stop offset="100%" stopColor="#0f172a" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey="tokens" stroke="#1e293b" strokeWidth={2} fill="url(#heroFill)" isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+const TOOL_META: Record<string, { label: string; Icon: (p: IconProps) => ReactNode }> = {
+  "claude-code": { label: "Claude Code", Icon: IconSparkles },
+  codex: { label: "Codex CLI", Icon: IconCode },
+  "gemini-cli": { label: "Gemini CLI", Icon: IconGemini },
+  zcode: { label: "ZCode", Icon: IconTerminal },
+  opencode: { label: "OpenCode", Icon: IconTerminal },
+  ollama: { label: "Ollama", Icon: IconCpu },
+};
+
+/* ── Full dashboard view ────────────────────────────────────────────── */
+
+function DashboardView({ onBack }: { onBack: () => void }): ReactNode {
+  const { range } = useRange();
+  const summary = useAsync(() => api.summary(range), [range]);
+  const daily = useAsync(() => api.daily(range), [range]);
+  const models = useAsync(() => api.models(range), [range]);
+  const tools = useAsync(() => api.tools(range), [range]);
+  const projects = useAsync(() => api.projects(range), [range]);
+  const heatmap = useAsync(() => api.heatmap(), []);
+
+  const s = summary.data;
+  const p = s?.previous;
+  const delta = deltaPct;
+
+  if (summary.error) {
+    return <p className="py-8 text-center text-sm text-danger">{summary.error}</p>;
+  }
+  if (summary.loading && !summary.data) return <LoadingSkeleton />;
 
   return (
-    <div className="flex items-center justify-between rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] px-3 py-2">
-      <div className="text-xs leading-tight">
-        <div className="font-medium text-[#e6edf3]">LLMTab 2.0.0</div>
-        <div className="text-[#8b949e]">Next update in {nextIn}m</div>
+    <main className="space-y-6">
+      <header className="flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className="flex min-h-[40px] items-center gap-2 rounded-control border border-border bg-surface px-4 py-2 text-sm hover:bg-surface-2"
+        >
+          <IconArrowLeft size={15} /> Back
+        </button>
+        <h1 className="text-lg font-semibold">LLMTab</h1>
+      </header>
+
+      <div className="flex justify-center">
+        <RangeTabs />
       </div>
-      <button className="rounded-full bg-[#2a2a2a] px-3 py-1.5 text-xs font-medium text-[#e6edf3]">Options ▾</button>
+
+      {s && (
+        <>
+          <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6" aria-label="Totals for range">
+            <StatCard label="Total" value={compact(s.totalTokens)} deltaPct={delta(s.totalTokens, p?.totalTokens)} />
+            <StatCard label="Input" value={compact(s.inputTokens)} deltaPct={delta(s.inputTokens, p?.inputTokens)} />
+            <StatCard label="Output" value={compact(s.outputTokens)} deltaPct={delta(s.outputTokens, p?.outputTokens)} />
+            <StatCard label="Cache read" value={compact(s.cacheReadTokens)} deltaPct={delta(s.cacheReadTokens, p?.cacheReadTokens)} />
+            <StatCard label="Cost" value={cost(s.costUsd, { est: true })} deltaPct={delta(s.costUsd, p?.costUsd)} />
+            <StatCard label="Conversations" value={String(s.conversations)} deltaPct={null} />
+          </section>
+
+          <HeroCard
+            totalTokens={s.totalTokens}
+            costUsd={s.costUsd}
+            unpricedModels={s.unpricedModels}
+            localModels={s.localModels ?? []}
+          />
+
+          {models.data && models.data.models.length > 0 && (
+            <ModelCards models={models.data.models} localModels={s.localModels ?? []} />
+          )}
+
+          {daily.data && <TrendChart days={daily.data.days.filter((d) => d.totalTokens > 0)} />}
+          {heatmap.data && <Heatmap days={heatmap.data.days} />}
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <ToolBreakdown tools={tools.data?.tools ?? []} />
+            <ProjectList projects={projects.data?.projects ?? []} />
+          </div>
+
+          {daily.data && daily.data.days.length > 0 && (
+            <DailyTable days={[...daily.data.days].sort((a, b) => b.day.localeCompare(a.day))} />
+          )}
+        </>
+      )}
+      <SyncFooter />
+    </main>
+  );
+}
+
+function LoadingSkeleton(): ReactNode {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="mx-auto h-9 w-72 rounded-full" />
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-20" />
+        ))}
+      </div>
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-72 w-full" />
+      <Skeleton className="h-48 w-full" />
     </div>
+  );
+}
+
+/* ── Icons (lucide-style inline SVG) ────────────────────────────────── */
+
+interface IconProps {
+  size?: number;
+  className?: string;
+}
+
+function Icon({ size = 16, className, children }: IconProps & { children: ReactNode }): ReactNode {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+function IconCpu(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <rect x="9" y="9" width="6" height="6" />
+      <path d="M15 2v2" />
+      <path d="M15 20v2" />
+      <path d="M9 2v2" />
+      <path d="M9 20v2" />
+      <path d="M2 15h2" />
+      <path d="M2 9h2" />
+      <path d="M20 15h2" />
+      <path d="M20 9h2" />
+    </Icon>
+  );
+}
+
+function IconCloud(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+    </Icon>
+  );
+}
+
+function IconBrain(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
+      <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
+    </Icon>
+  );
+}
+
+function IconTerminal(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 11 2-2-2-2" />
+      <path d="M11 13h4" />
+    </Icon>
+  );
+}
+
+function IconCode(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="m16 18 6-6-6-6" />
+      <path d="m8 6-6 6 6 6" />
+    </Icon>
+  );
+}
+
+function IconSparkles(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="M12 3l1.9 5.6 5.6 1.9-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9Z" />
+      <path d="M19 3v4" />
+      <path d="M21 5h-4" />
+    </Icon>
+  );
+}
+
+function IconGemini(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4Z" />
+    </Icon>
+  );
+}
+
+function IconRefresh(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+      <path d="M8 16H3v5" />
+    </Icon>
+  );
+}
+
+function IconGrid(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </Icon>
+  );
+}
+
+function IconExternal(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </Icon>
+  );
+}
+
+function IconArrowUpRight(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="M7 7h10v10" />
+      <path d="M7 17 17 7" />
+    </Icon>
+  );
+}
+
+function IconArrowDownRight(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="m7 7 10 10" />
+      <path d="M17 7v10H7" />
+    </Icon>
+  );
+}
+
+function IconArrowLeft(p: IconProps): ReactNode {
+  return (
+    <Icon {...p}>
+      <path d="m12 19-7-7 7-7" />
+      <path d="M19 12H5" />
+    </Icon>
   );
 }

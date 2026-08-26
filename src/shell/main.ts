@@ -267,7 +267,7 @@ function createPopoverWindow(): void {
   if (!dashboardPort) return;
   const isMac = process.platform === "darwin";
   const winOpts: Electron.BrowserWindowConstructorOptions = {
-    width: 400,
+    width: 360,
     height: 640,
     show: false, // hidden sampai tray diklik
     frame: false, // REQUIRED: tidak ada frame agar seperti popover
@@ -296,7 +296,10 @@ function createPopoverWindow(): void {
     winOpts.roundedCorners = true;
   }
   win = new BrowserWindow(winOpts);
-  if (isMac) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  if (isMac) {
+    win.setWindowButtonVisibility(false);
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
   // Blur otomatis hide — klik di luar popover menutup
   win.on("blur", () => {
     if (win?.isDestroyed() || !win?.isVisible()) return;
@@ -383,9 +386,10 @@ function applyTrayTitle(tokens: number, cost: number, perTool: Array<{ tool: str
     return;
   }
   const title = formatTrayTitle(tokens, cost, perTool, mb);
-  // setTitle is macOS-only; on other platforms it's a no-op but harmless
+  // setTitle is macOS-only; on other platforms it's a no-op but harmless.
+  // "monospaced" renders a smaller fixed-width variant, keeping the strip compact.
   try {
-    tray.setTitle(title);
+    tray.setTitle(title, { fontType: "monospaced" });
   } catch {
     // older Electron or non-macOS may throw
   }

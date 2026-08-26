@@ -39,6 +39,12 @@ export function createServer(): http.Server {
     res: http.ServerResponse,
     url: URL,
   ): Promise<void> {
+    if (url.pathname === "/api/sync") {
+      if (req.method !== "POST") return sendJson(res, 405, { error: "POST required" });
+      const { runSync } = await import("../ingest/sync.js");
+      const result = runSync(db);
+      return sendJson(res, 200, { ok: result.status === "ok", ...result });
+    }
     if (url.pathname.startsWith("/api/")) {
       return handleApi(res, url);
     }

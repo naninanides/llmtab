@@ -18,6 +18,15 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function post<T>(path: string): Promise<T> {
+  const res = await fetch(path, { method: "POST" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `API ${res.status}`);
+  }
+  return (await res.json()) as T;
+}
+
 export interface SummaryResponse {
   inputTokens: number;
   outputTokens: number;
@@ -85,4 +94,12 @@ export const api = {
         entries: Array<{ tool: string; recordsAdded: number; linesSkipped: number }>;
       } | null;
     }>("/api/sync/last"),
+  sync: () =>
+    post<{
+      ok: boolean;
+      finishedAt: string;
+      totalRecordsAdded: number;
+      totalLinesSkipped: number;
+      entries: Array<{ tool: string; recordsAdded: number; linesSkipped: number }>;
+    }>("/api/sync"),
 };
