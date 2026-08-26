@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dashboard-dist/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+*.tgz

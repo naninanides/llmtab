@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* StyleGuide §2 — light */
+  --bg: #f8f9fa;
+  --surface: #ffffff;
+  --surface-2: #f1f3f5;
+  --border: #e5e7eb;
+  --text-1: #111827;
+  --text-2: #6b7280;
+  --accent: #10b981;
+  --danger: #ef4444;
+}
+
+.dark {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2129;
+  --border: #2d333b;
+  --text-1: #e6edf3;
+  --text-2: #8b949e;
+  --accent: #34d399;
+  --danger: #f87171;
+}
+
+body {
+  @apply bg-bg text-text-1;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Heatmap 5-step scale (StyleGuide §2) */
+.heatmap-cell.step-0 { background: #ebedf0; }
+.heatmap-cell.step-1 { background: #9be9a8; }
+.heatmap-cell.step-2 { background: #40c463; }
+.heatmap-cell.step-3 { background: #30a14e; }
+.heatmap-cell.step-4 { background: #216e39; }
+.heatmap-empty { background: var(--surface-2); }
+
+.dark .heatmap-cell.step-0 { background: #161b22; border: 1px solid var(--border); }
+.dark .heatmap-cell.step-1 { background: #0e4429; }
+.dark .heatmap-cell.step-2 { background: #006d32; }
+.dark .heatmap-cell.step-3 { background: #26a641; }
+.dark .heatmap-cell.step-4 { background: #39d353; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
+    animation: none;
+  }
+}

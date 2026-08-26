@@ -1,0 +1,44 @@
+{
+  "name": "llmtab",
+  "version": "2.0.0",
+  "description": "Local-first LLM token usage & cost tracker served in a browser tab.",
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "dashboard"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "llmtab": "./dist/cli/main.js"
+  },
+  "files": [
+    "dist",
+    "dashboard-dist"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace dashboard & npm run build:cli --watch",
+    "build": "npm run build:cli && npm run build:dashboard",
+    "build:cli": "tsc -p tsconfig.json && cp src/cost/assets/pricing-snapshot.json dist/cost/assets/",
+    "build:dashboard": "npm run build --workspace dashboard",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace dashboard",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "commander": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.0",
+    "@typescript-eslint/parser": "^8.46.0",
+    "eslint": "^9.39.0",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
