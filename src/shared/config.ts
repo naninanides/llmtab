@@ -13,6 +13,19 @@ export interface LlmtabConfig {
   proxyPort?: number;
   /** Upstream Ollama port. Default 11434. */
   ollamaPort?: number;
+  /**
+   * Menu-bar pin config inspired by OpenUsage's "starred metrics" (PRD FR-50).
+   * - mode: "text" renders today total as tray title on macOS; "icon-only" hides it.
+   * - showCost: include est. cost beside tokens.
+   * - pinnedTools: up to 2 tool ids to show individually (empty = auto top tools / total).
+   * - style: "compact" = single total · cost; "per-tool" = breakdown of pinned tools.
+   */
+  menuBar?: {
+    mode?: "text" | "icon-only";
+    showCost?: boolean;
+    pinnedTools?: string[];
+    style?: "compact" | "per-tool";
+  };
 }
 
 export const DEFAULT_PROXY_PORT = 11435;
