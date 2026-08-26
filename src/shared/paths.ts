@@ -22,8 +22,7 @@ const TOOL_DIR_ENV: Record<string, string> = {
 export function toolSourceDir(tool: string, relative: string): string {
   const env = TOOL_DIR_ENV[tool];
   const override = env ? process.env[env] : undefined;
-  const home = process.env.HOME ?? "";
-  return override ?? path.join(home, relative);
+  return override ?? path.join(os.homedir(), relative);
 }
 
 export function opencodeDbPath(): string {

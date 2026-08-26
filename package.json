@@ -18,9 +18,9 @@
     "dashboard-dist"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace dashboard & npm run build:cli --watch",
+    "dev": "concurrently -n cli,dashboard -c blue,green \"npm run build:cli -- --watch\" \"npm run dev --workspace dashboard\"",
     "build": "npm run build:cli && npm run build:dashboard",
-    "build:cli": "tsc -p tsconfig.json && cp src/cost/assets/pricing-snapshot.json dist/cost/assets/",
+    "build:cli": "tsc -p tsconfig.json && node -e \"const fs=require('node:fs');fs.mkdirSync('dist/cost/assets',{recursive:true});fs.copyFileSync('src/cost/assets/pricing-snapshot.json','dist/cost/assets/pricing-snapshot.json')\"",
     "build:dashboard": "npm run build --workspace dashboard",
     "app": "electron dist/shell/main.js",
     "lint": "eslint .",
@@ -37,6 +37,7 @@
     "@types/node": "^24.0.0",
     "@typescript-eslint/eslint-plugin": "^8.46.0",
     "@typescript-eslint/parser": "^8.46.0",
+    "concurrently": "^10.0.5",
     "electron": "^44.0.0",
     "eslint": "^9.39.0",
     "prettier": "^3.6.0",
