@@ -9,6 +9,7 @@ import type { Window } from "./queries.js";
 import {
   getDaily,
   getHeatmap,
+  getLocalModels,
   getModels,
   getProjects,
   getSummary,
@@ -33,7 +34,11 @@ export function createServer(): http.Server {
     void handle(req, res, url).catch(() => sendJson(res, 500, { error: "internal error" }));
   });
 
-  async function handle(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+  async function handle(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: URL,
+  ): Promise<void> {
     if (url.pathname.startsWith("/api/")) {
       return handleApi(res, url);
     }
@@ -49,10 +54,15 @@ export function createServer(): http.Server {
       case "/api/status":
         return json(200, { tools: detectTools() });
       case "/api/sync/last": {
-        const row = db
-          .prepare("SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1")
-          .get() as
-          | { started_at: string; finished_at: string; status: string; records_added: number; lines_skipped: number; detail_json: string | null }
+        const row = db.prepare("SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1").get() as
+          | {
+              started_at: string;
+              finished_at: string;
+              status: string;
+              records_added: number;
+              lines_skipped: number;
+              detail_json: string | null;
+            }
           | undefined;
         if (!row) return json(200, { lastSync: null });
         return json(200, {
@@ -78,7 +88,8 @@ export function createServer(): http.Server {
           delete (previous as { records?: number }).records;
         }
         const unpricedModels = getUnpricedModels(db, w);
-        return json(200, { ...summary, previous, unpricedModels });
+        const localModels = getLocalModels(db, w);
+        return json(200, { ...summary, previous, unpricedModels, localModels });
       }
       case "/api/daily": {
         const w = resolveWindow(url);

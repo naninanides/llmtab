@@ -2,7 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { type DatabaseSync } from "node:sqlite";
 import { llmtabHome } from "../shared/paths.js";
-import { buildPriceIndex, computeCost, findRates, normalizeModelName, type PriceIndex } from "./match.js";
+import {
+  buildPriceIndex,
+  computeCost,
+  findRates,
+  normalizeModelName,
+  type PriceIndex,
+} from "./match.js";
 import { rebuildAllBuckets } from "../store/db.js";
 
 const PRICE_URL =
@@ -25,7 +31,9 @@ function cachePath(): string {
  * Refresh flow (PRD FR-11): network fetch → 24 h disk cache → bundled
  * snapshot. `LLMTAB_OFFLINE=1` skips the network entirely.
  */
-export async function refreshPricing(db: DatabaseSync): Promise<{ source: string; fetchedAt: string }> {
+export async function refreshPricing(
+  db: DatabaseSync,
+): Promise<{ source: string; fetchedAt: string }> {
   const cached = readCache();
   const offline = process.env.LLMTAB_OFFLINE === "1";
 
@@ -122,13 +130,22 @@ export function upsertPricing(db: DatabaseSync, prices: PriceMap, fetchedAt: str
   for (const [key, rates] of idx) {
     if (seen.has(key)) continue;
     seen.add(key);
-    stmt.run(key, rates.inputPerM, rates.outputPerM, rates.cacheReadPerM, rates.cacheWritePerM, fetchedAt);
+    stmt.run(
+      key,
+      rates.inputPerM,
+      rates.outputPerM,
+      rates.cacheReadPerM,
+      rates.cacheWritePerM,
+      fetchedAt,
+    );
   }
 }
 
 export interface ApplyPricingResult {
   pricedModels: string[];
   unpricedModels: string[];
+  /** models used only by local runtimes (ollama) — $0 by design, FR-17 */
+  localModels: string[];
 }
 
 interface RateRow {
@@ -142,24 +159,37 @@ interface RateRow {
 /**
  * Backfills record costs from the pricing table and rebuilds all buckets
  * (TASK T3.4). Idempotent — safe to run after every sync.
+ * Local models (all records from `ollama`) are priced $0 with a "local"
+ * badge, never "unpriced" (PRD FR-17).
  */
 export function applyPricing(db: DatabaseSync): ApplyPricingResult {
   const rows = db
-    .prepare("SELECT model AS key, input_per_m i, output_per_m o, cache_read_per_m cr, cache_write_per_m cw FROM pricing")
+    .prepare(
+      "SELECT model AS key, input_per_m i, output_per_m o, cache_read_per_m cr, cache_write_per_m cw FROM pricing",
+    )
     .all() as unknown as RateRow[];
   const idx: PriceIndex = new Map();
   for (const r of rows) {
     idx.set(r.key, { inputPerM: r.i, outputPerM: r.o, cacheReadPerM: r.cr, cacheWritePerM: r.cw });
   }
 
-  const models = (
-    db.prepare("SELECT DISTINCT model FROM usage_records").all() as Array<{ model: string }>
-  ).map((r) => r.model);
+  const models = db
+    .prepare(
+      `SELECT model, SUM(CASE WHEN tool = 'ollama' THEN 1 ELSE 0 END) AS ollamaRows, COUNT(*) AS totalRows
+       FROM usage_records GROUP BY model`,
+    )
+    .all() as unknown as Array<{ model: string; ollamaRows: number; totalRows: number }>;
 
   const priced: string[] = [];
   const unpriced: string[] = [];
+  const local: string[] = [];
 
-  for (const model of models) {
+  for (const { model, ollamaRows, totalRows } of models) {
+    if (ollamaRows === totalRows) {
+      db.prepare("UPDATE usage_records SET cost_usd = 0 WHERE model = ?").run(model);
+      local.push(model);
+      continue;
+    }
     const rates = findRates(idx, model);
     if (!rates) {
       unpriced.push(model);
@@ -174,7 +204,7 @@ export function applyPricing(db: DatabaseSync): ApplyPricingResult {
   }
 
   rebuildAllBuckets(db);
-  return { pricedModels: priced, unpricedModels: unpriced };
+  return { pricedModels: priced, unpricedModels: unpriced, localModels: local };
 }
 
 export { computeCost, normalizeModelName };

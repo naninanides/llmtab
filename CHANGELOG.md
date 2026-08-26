@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] — v2.1.0 work in progress
+
+### Added
+
+- **Menu-bar shell (Electron)** (PRD FR-50…56)
+  - Tray icon (monochrome template) with live tooltip: today's tokens + est. cost; menu with per-tool quick stats, Sync now, Dashboard, Open in Browser, Launch-at-login toggle, Quit
+  - Compact popup window (420×640) loading the same dashboard SPA; Esc/blur closes; single-instance lock focuses the existing window on second launch
+  - Shell boots the local server itself (port-fallback preserved); `llmtab` default command now prefers the shell and falls back to serve+browser headless (`llmtab app` launches explicitly)
+- **OpenCode provider** (passive SQLite reader)
+  - Read-only open of `~/.local/share/opencode/opencode.db` with WAL-copy fallback; assistant rows mapped from the `message.data` JSON (tokens incl. cache read/write + reasoning, model, project cwd); `message.id` dedup keys keep syncs idempotent
+- **Ollama provider** (local reverse proxy — Ollama persists no usage data anywhere)
+  - `llmtab proxy`: forwards every request to the real server (:11435 → :11434), streams bodies through untouched, records only numeric usage fields from `/api/chat`, `/api/generate`, and OpenAI-compat responses (streaming-safe via final chunk)
+  - Opt-in via config (`~/.llmtab/config.json`) so the shell/default command auto-start it; port conflicts fail with an actionable error instead of silently moving
+  - Local models priced `$0` with a "local" badge, never "unpriced" (FR-17)
+- **Doctor/status** — ollama shows proxy wiring state with setup hints; doctor verifies upstream reachability and that clients point at the proxy
+
+### Changed
+
+- Docs updated for the new delivery model and six-provider scope: PRD v1.1, PLANING M7/M8, StyleGuide menubar section, README supported-tools table
+
 ## [2.0.0] — 2026-08-26
 
 First release. Local-first LLM token usage & cost tracker for Claude Code, Codex CLI, Gemini CLI, and ZCode.

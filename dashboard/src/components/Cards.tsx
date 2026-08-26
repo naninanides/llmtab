@@ -13,7 +13,11 @@ export function RangeTabs(): ReactNode {
     { kind: "all", label: "All" },
   ];
   return (
-    <div role="tablist" aria-label="Time range" className="flex items-center gap-1 rounded-full border border-border bg-surface p-1">
+    <div
+      role="tablist"
+      aria-label="Time range"
+      className="flex items-center gap-1 rounded-full border border-border bg-surface p-1"
+    >
       {options.map((o) => (
         <button
           key={o.kind}
@@ -42,14 +46,18 @@ function CustomRangeButton(): ReactNode {
           type="date"
           aria-label="From date"
           value={range.from ?? ""}
-          onChange={(e) => setRange({ kind: "custom", from: e.target.value, to: range.to ?? e.target.value })}
+          onChange={(e) =>
+            setRange({ kind: "custom", from: e.target.value, to: range.to ?? e.target.value })
+          }
           className="rounded-control bg-surface-2 px-2 py-1 text-xs text-text-1"
         />
         <input
           type="date"
           aria-label="To date"
           value={range.to ?? ""}
-          onChange={(e) => setRange({ kind: "custom", from: range.from ?? e.target.value, to: e.target.value })}
+          onChange={(e) =>
+            setRange({ kind: "custom", from: range.from ?? e.target.value, to: e.target.value })
+          }
           className="rounded-control bg-surface-2 px-2 py-1 text-xs text-text-1"
         />
       </span>
@@ -89,7 +97,10 @@ export function StatCard({ label, value, deltaPct }: StatCardProps): ReactNode {
 export function DeltaChip({ pct }: { pct: number }): ReactNode {
   const up = pct >= 0;
   return (
-    <span className={`text-xs font-medium ${up ? "text-accent" : "text-danger"}`} title="vs previous equal-length range">
+    <span
+      className={`text-xs font-medium ${up ? "text-accent" : "text-danger"}`}
+      title="vs previous equal-length range"
+    >
       {up ? "▲" : "▼"} {up ? "+" : ""}
       {Math.round(pct)}%
     </span>
@@ -100,20 +111,35 @@ export function HeroCard({
   totalTokens,
   costUsd,
   unpricedModels,
+  localModels = [],
 }: {
   totalTokens: number;
   costUsd: number;
   unpricedModels: string[];
+  localModels?: string[];
 }): ReactNode {
   return (
     <div className="rounded-card border border-border bg-surface p-4">
       <div className="text-xs font-medium uppercase tracking-wide text-text-2">Total tokens</div>
-      <div className="mt-1 text-4xl font-bold leading-tight tabular-nums">{compact(totalTokens)}</div>
-      <div className="mt-1 flex items-center gap-2 text-sm text-text-2">
+      <div className="mt-1 text-4xl font-bold leading-tight tabular-nums">
+        {compact(totalTokens)}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-2">
         <span>{cost(costUsd, { est: true })} est.</span>
         {unpricedModels.length > 0 && (
-          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400" title={unpricedModels.join(", ")}>
+          <span
+            className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+            title={unpricedModels.join(", ")}
+          >
             unpriced: {unpricedModels.length} model{unpricedModels.length > 1 ? "s" : ""}
+          </span>
+        )}
+        {localModels.length > 0 && (
+          <span
+            className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-text-2"
+            title={`${localModels.join(", ")} — runs locally, no API cost`}
+          >
+            local: {localModels.length} model{localModels.length > 1 ? "s" : ""}
           </span>
         )}
       </div>
@@ -123,21 +149,36 @@ export function HeroCard({
 
 export function ModelCards({
   models,
+  localModels = [],
 }: {
   models: Array<{ model: string; totalTokens: number; costUsd: number }>;
+  localModels?: string[];
 }): ReactNode {
   const grand = models.reduce((a, m) => a + m.totalTokens, 0);
+  const localSet = new Set(localModels);
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {models.slice(0, 6).map((m) => (
         <div key={m.model} className="rounded-card border border-border bg-surface p-4">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate font-semibold" title={m.model}>{m.model}</span>
-            <span className="text-sm tabular-nums text-accent">{percent(m.totalTokens, grand)}</span>
+            <span className="truncate font-semibold" title={m.model}>
+              {m.model}
+            </span>
+            {localSet.has(m.model) ? (
+              <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-text-2">
+                local
+              </span>
+            ) : (
+              <span className="text-sm tabular-nums text-accent">
+                {percent(m.totalTokens, grand)}
+              </span>
+            )}
           </div>
           <div className="mt-2 flex items-baseline justify-between text-sm tabular-nums text-text-2">
             <span>{compact(m.totalTokens)} tokens</span>
-            <span>{m.costUsd > 0 ? cost(m.costUsd, { est: true }) : "—"}</span>
+            <span>
+              {localSet.has(m.model) ? "$0" : m.costUsd > 0 ? cost(m.costUsd, { est: true }) : "—"}
+            </span>
           </div>
         </div>
       ))}

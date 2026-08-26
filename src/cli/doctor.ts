@@ -1,8 +1,10 @@
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { detectTools } from "../ingest/detector.js";
-import { dbPath, llmtabHome, toolSourceDir } from "../shared/paths.js";
+import { dbPath, llmtabHome, toolSourceDir, opencodeDbPath } from "../shared/paths.js";
+import { readConfig, proxyPort, ollamaUpstreamPort } from "../shared/config.js";
 import { pricingCacheAgeMs } from "../cost/litellm.js";
 
 export interface Check {
@@ -13,8 +15,8 @@ export interface Check {
 
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-/** Health check per FR-6: node, DB writability, source readability, pricing age. */
-export function runDoctor(db: DatabaseSync): { checks: Check[]; healthy: boolean } {
+/** Health check per FR-6: node, DB writability, source readability, pricing age, proxy (FR-16). */
+export async function runDoctor(db: DatabaseSync): Promise<{ checks: Check[]; healthy: boolean }> {
   const checks: Check[] = [];
 
   // Node version
@@ -82,7 +84,48 @@ export function runDoctor(db: DatabaseSync): { checks: Check[]; healthy: boolean
     });
   }
 
+  // Ollama proxy (FR-16): only meaningful when enabled
+  const config = readConfig();
+  if (config.proxyEnabled) {
+    const port = proxyPort(config);
+    const upstream = ollamaUpstreamPort(config);
+    const upstreamOk = await reachable(`http://127.0.0.1:${upstream}/api/version`);
+    checks.push({
+      name: "proxy:listen",
+      ok: true,
+      detail: `enabled on 127.0.0.1:${port} (start via \`llmtab proxy\` or the menu-bar app)`,
+    });
+    checks.push({
+      name: "proxy:upstream",
+      ok: upstreamOk,
+      detail: upstreamOk
+        ? `ollama reachable on :${upstream}`
+        : `nothing listening on :${upstream} — is ollama serve running?`,
+    });
+    checks.push({
+      name: "proxy:client",
+      ok: process.env.OLLAMA_HOST?.includes(String(port)) ?? false,
+      detail: process.env.OLLAMA_HOST?.includes(String(port))
+        ? `OLLAMA_HOST points at :${port}`
+        : `OLLAMA_HOST does not point at :${port} — export OLLAMA_HOST=http://127.0.0.1:${port}`,
+    });
+  }
+
   return { checks, healthy: checks.every((c) => c.ok) };
+}
+
+function reachable(url: string, timeoutMs = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      res.resume();
+      resolve((res.statusCode ?? 500) < 500);
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.on("error", () => resolve(false));
+  });
 }
 
 function sourceFor(tool: string): string {
@@ -95,6 +138,10 @@ function sourceFor(tool: string): string {
       return toolSourceDir(tool, ".gemini/tmp");
     case "zcode":
       return path.join(toolSourceDir(tool, ".zcode/cli/db"), "db.sqlite");
+    case "opencode":
+      return opencodeDbPath();
+    case "ollama":
+      return toolSourceDir(tool, ".ollama");
   }
   return "";
 }

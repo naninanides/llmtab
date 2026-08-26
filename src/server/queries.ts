@@ -42,11 +42,18 @@ export function getSummary(db: DatabaseSync, w: Window): Summary {
     records: number;
     conversations: number;
   };
-  return { ...r, totalTokens: r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheWriteTokens, unpriced: false };
+  return {
+    ...r,
+    totalTokens: r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheWriteTokens,
+    unpriced: false,
+  };
 }
 
 /** Models breakdown within a window. */
-export function getModels(db: DatabaseSync, w: Window): Array<{
+export function getModels(
+  db: DatabaseSync,
+  w: Window,
+): Array<{
   model: string;
   totalTokens: number;
   inputTokens: number;
@@ -68,7 +75,10 @@ export function getModels(db: DatabaseSync, w: Window): Array<{
     .all(...params(w)) as never;
 }
 
-export function getTools(db: DatabaseSync, w: Window): Array<{ tool: string; totalTokens: number; costUsd: number }> {
+export function getTools(
+  db: DatabaseSync,
+  w: Window,
+): Array<{ tool: string; totalTokens: number; costUsd: number }> {
   return db
     .prepare(
       `SELECT tool, SUM(input_tokens)+SUM(output_tokens)+SUM(cache_read_tokens)+SUM(cache_write_tokens) totalTokens,
@@ -78,7 +88,10 @@ export function getTools(db: DatabaseSync, w: Window): Array<{ tool: string; tot
     .all(...params(w)) as never;
 }
 
-export function getProjects(db: DatabaseSync, w: Window): Array<{ project: string; totalTokens: number; costUsd: number }> {
+export function getProjects(
+  db: DatabaseSync,
+  w: Window,
+): Array<{ project: string; totalTokens: number; costUsd: number }> {
   return db
     .prepare(
       `SELECT COALESCE(project,'(unknown)') project,
@@ -121,7 +134,10 @@ export function getDaily(db: DatabaseSync, w: Window): DayRow[] {
 }
 
 /** GitHub-style heatmap data: per-day totals for the trailing `months`. */
-export function getHeatmap(db: DatabaseSync, months: number): Array<{ day: string; totalTokens: number }> {
+export function getHeatmap(
+  db: DatabaseSync,
+  months: number,
+): Array<{ day: string; totalTokens: number }> {
   const toMs = Date.now();
   const fromMs = toMs - months * 30 * 24 * 60 * 60 * 1000;
   const rows = db
@@ -129,7 +145,10 @@ export function getHeatmap(db: DatabaseSync, months: number): Array<{ day: strin
       `SELECT ${DAY_EXPR} day, SUM(input_tokens)+SUM(output_tokens)+SUM(cache_read_tokens)+SUM(cache_write_tokens) totalTokens
        FROM usage_records WHERE occurred_at >= ? AND occurred_at <= ? GROUP BY ${DAY_EXPR}`,
     )
-    .all(new Date(fromMs).toISOString(), new Date(toMs).toISOString()) as unknown as Array<{ day: string; totalTokens: number }>;
+    .all(new Date(fromMs).toISOString(), new Date(toMs).toISOString()) as unknown as Array<{
+    day: string;
+    totalTokens: number;
+  }>;
 
   // fill gaps so the grid has continuous days
   const byDay = new Map(rows.map((r) => [r.day, r.totalTokens]));
@@ -139,14 +158,33 @@ export function getHeatmap(db: DatabaseSync, months: number): Array<{ day: strin
   });
 }
 
-/** Models active in a window that have no pricing row (for the unpriced badge). */
+/**
+ * Models active in a window that have no pricing row (for the unpriced badge).
+ * Local models (all records from `ollama`) are excluded — they get a "local"
+ * badge instead, never "unpriced" (PRD FR-17).
+ */
 export function getUnpricedModels(db: DatabaseSync, w: Window): string[] {
   return (
     db
       .prepare(
         `SELECT DISTINCT model FROM usage_records r
          WHERE NOT EXISTS (SELECT 1 FROM pricing p WHERE p.model IN (r.model, lower(r.model)))
+           AND EXISTS (SELECT 1 FROM usage_records r2 WHERE r2.model = r.model AND r2.tool <> 'ollama')
            AND ${where(w).slice(5)}`,
+      )
+      .all(...params(w)) as unknown as Array<{ model: string }>
+  ).map((r) => r.model);
+}
+
+/** Models active in a window whose records come exclusively from local runtimes (FR-17). */
+export function getLocalModels(db: DatabaseSync, w: Window): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT model, COUNT(*) AS totalRows, SUM(CASE WHEN tool = 'ollama' THEN 1 ELSE 0 END) AS ollamaRows
+         FROM usage_records r
+         WHERE ${where(w).slice(5)}
+         GROUP BY model HAVING ollamaRows = totalRows`,
       )
       .all(...params(w)) as unknown as Array<{ model: string }>
   ).map((r) => r.model);

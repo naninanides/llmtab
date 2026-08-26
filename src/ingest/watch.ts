@@ -1,7 +1,8 @@
 import fs from "node:fs";
+import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { detectTools } from "./detector.js";
-import { toolSourceDir } from "../shared/paths.js";
+import { toolSourceDir, opencodeDbPath } from "../shared/paths.js";
 import { runSync, type SyncResult } from "./sync.js";
 
 const DEBOUNCE_MS = 1_000;
@@ -27,6 +28,9 @@ function watchDirs(): string[] {
         break;
       case "zcode":
         dirs.add(toolSourceDir(d.tool, ".zcode/cli/db"));
+        break;
+      case "opencode":
+        dirs.add(path.dirname(opencodeDbPath()));
         break;
     }
   }

@@ -16,6 +16,7 @@ const TOOL_DIR_ENV: Record<string, string> = {
   codex: "LLMTAB_CODEX_DIR",
   "gemini-cli": "LLMTAB_GEMINI_DIR",
   zcode: "LLMTAB_ZCODE_DIR",
+  opencode: "LLMTAB_OPENCODE_DIR",
 };
 
 export function toolSourceDir(tool: string, relative: string): string {
@@ -23,4 +24,11 @@ export function toolSourceDir(tool: string, relative: string): string {
   const override = env ? process.env[env] : undefined;
   const home = process.env.HOME ?? "";
   return override ?? path.join(home, relative);
+}
+
+export function opencodeDbPath(): string {
+  return (
+    process.env.LLMTAB_OPENCODE_DB_PATH ??
+    path.join(toolSourceDir("opencode", ".local/share/opencode"), "opencode.db")
+  );
 }

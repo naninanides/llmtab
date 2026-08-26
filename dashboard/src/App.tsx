@@ -93,24 +93,50 @@ function Dashboard(): ReactNode {
         <LoadingSkeleton />
       ) : (
         <>
-          <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6" aria-label="Totals for range">
-            <StatCard label="Total" value={compact(s.totalTokens)} deltaPct={delta(s.totalTokens, p?.totalTokens)} />
-            <StatCard label="Input" value={compact(s.inputTokens)} deltaPct={delta(s.inputTokens, p?.inputTokens)} />
-            <StatCard label="Output" value={compact(s.outputTokens)} deltaPct={delta(s.outputTokens, p?.outputTokens)} />
-            <StatCard label="Cache read" value={compact(s.cacheReadTokens)} deltaPct={delta(s.cacheReadTokens, p?.cacheReadTokens)} />
-            <StatCard label="Cost" value={cost(s.costUsd, { est: true })} deltaPct={delta(s.costUsd, p?.costUsd)} />
+          <section
+            className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6"
+            aria-label="Totals for range"
+          >
+            <StatCard
+              label="Total"
+              value={compact(s.totalTokens)}
+              deltaPct={delta(s.totalTokens, p?.totalTokens)}
+            />
+            <StatCard
+              label="Input"
+              value={compact(s.inputTokens)}
+              deltaPct={delta(s.inputTokens, p?.inputTokens)}
+            />
+            <StatCard
+              label="Output"
+              value={compact(s.outputTokens)}
+              deltaPct={delta(s.outputTokens, p?.outputTokens)}
+            />
+            <StatCard
+              label="Cache read"
+              value={compact(s.cacheReadTokens)}
+              deltaPct={delta(s.cacheReadTokens, p?.cacheReadTokens)}
+            />
+            <StatCard
+              label="Cost"
+              value={cost(s.costUsd, { est: true })}
+              deltaPct={delta(s.costUsd, p?.costUsd)}
+            />
             <StatCard label="Conversations" value={String(s.conversations)} deltaPct={null} />
           </section>
 
-          <HeroCard totalTokens={s.totalTokens} costUsd={s.costUsd} unpricedModels={s.unpricedModels} />
+          <HeroCard
+            totalTokens={s.totalTokens}
+            costUsd={s.costUsd}
+            unpricedModels={s.unpricedModels}
+            localModels={s.localModels ?? []}
+          />
 
           {models.data && models.data.models.length > 0 && (
-            <ModelCards models={models.data.models} />
+            <ModelCards models={models.data.models} localModels={s.localModels ?? []} />
           )}
 
-          {daily.data && (
-            <TrendChart days={daily.data.days.filter((d) => d.totalTokens > 0)} />
-          )}
+          {daily.data && <TrendChart days={daily.data.days.filter((d) => d.totalTokens > 0)} />}
           {heatmap.data && <Heatmap days={heatmap.data.days} />}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -149,8 +175,13 @@ function EmptyState(): ReactNode {
     <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-border bg-surface py-24 text-center">
       <div className="text-4xl">📊</div>
       <p className="mt-4 text-lg font-medium">No usage yet</p>
-      <p className="mt-1 text-sm text-text-2">Run <code className="rounded bg-surface-2 px-1.5 py-0.5 text-accent">llmtab sync</code> to import your AI tool logs.</p>
-      <p className="mt-1 text-xs text-text-2">LLMTab reads only token counts — never your prompts or responses.</p>
+      <p className="mt-1 text-sm text-text-2">
+        Run <code className="rounded bg-surface-2 px-1.5 py-0.5 text-accent">llmtab sync</code> to
+        import your AI tool logs.
+      </p>
+      <p className="mt-1 text-xs text-text-2">
+        LLMTab reads only token counts — never your prompts or responses.
+      </p>
     </div>
   );
 }

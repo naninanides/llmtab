@@ -8,7 +8,8 @@ export function ToolBreakdown({
   tools: Array<{ tool: string; totalTokens: number; costUsd: number }>;
 }): ReactNode {
   const grand = tools.reduce((a, t) => a + t.totalTokens, 0);
-  const colors = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b"];
+  // StyleGuide §2 chart series order (first 6 cover v1's six tools)
+  const colors = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
   return (
     <section className="rounded-card border border-border bg-surface p-4">
       <h2 className="text-base font-semibold">By tool</h2>
@@ -16,17 +17,33 @@ export function ToolBreakdown({
         <p className="mt-2 text-sm text-text-2">No usage in range.</p>
       ) : (
         <>
-          <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-2" role="img" aria-label="Token share by tool">
+          <div
+            className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-2"
+            role="img"
+            aria-label="Token share by tool"
+          >
             {tools.map((t, i) => (
-              <div key={t.tool} style={{ width: percent(t.totalTokens, grand), background: colors[i % colors.length] }} title={`${t.tool} · ${percent(t.totalTokens, grand)}`} />
+              <div
+                key={t.tool}
+                style={{
+                  width: percent(t.totalTokens, grand),
+                  background: colors[i % colors.length],
+                }}
+                title={`${t.tool} · ${percent(t.totalTokens, grand)}`}
+              />
             ))}
           </div>
           <ul className="mt-3 space-y-1 text-sm">
             {tools.map((t, i) => (
               <li key={t.tool} className="flex items-center gap-2">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ background: colors[i % colors.length] }} />
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ background: colors[i % colors.length] }}
+                />
                 <span className="flex-1">{t.tool}</span>
-                <span className="tabular-nums text-text-2">{compact(t.totalTokens)} · {cost(t.costUsd, { est: true })}</span>
+                <span className="tabular-nums text-text-2">
+                  {compact(t.totalTokens)} · {cost(t.costUsd, { est: true })}
+                </span>
               </li>
             ))}
           </ul>
@@ -58,7 +75,10 @@ export function ProjectList({
                 <span className="tabular-nums text-text-2">{compact(p.totalTokens)}</span>
               </div>
               <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-surface-2">
-                <div className="h-full rounded-full bg-accent" style={{ width: percent(p.totalTokens, grand) }} />
+                <div
+                  className="h-full rounded-full bg-accent"
+                  style={{ width: percent(p.totalTokens, grand) }}
+                />
               </div>
             </li>
           ))}

@@ -7,17 +7,15 @@ import { codexParser } from "./parsers/codex.js";
 import { geminiCliParser } from "./parsers/gemini-cli.js";
 import { mapZcodeRows } from "./parsers/zcode.js";
 import { fetchZcodeUsage } from "./zcode-source.js";
+import { mapOpencodeRows } from "./parsers/opencode.js";
+import { fetchOpencodeUsage } from "./opencode-source.js";
+import { opencodeDbPath } from "../shared/paths.js";
 import type { Parser } from "./parsers/types.js";
 import { dedupeRecords } from "./dedup.js";
 import { insertRecords } from "../store/records.js";
 import { refreshBuckets } from "../store/buckets.js";
 import { toolSourceDir } from "../shared/paths.js";
-import {
-  TOOL_IDS,
-  type SyncReportEntry,
-  type SyncRun,
-  type ToolId,
-} from "../shared/types.js";
+import { TOOL_IDS, type SyncReportEntry, type SyncRun, type ToolId } from "../shared/types.js";
 
 export interface SyncOptions {
   verbose?: boolean | undefined;
@@ -93,6 +91,10 @@ function syncTool(db: DatabaseSync, tool: ToolId): SyncReportEntry {
   if (SQLITE_DIRS[tool]) {
     return syncZcode(db);
   }
+  if (tool === "opencode") {
+    return syncOpencode(db);
+  }
+  // ollama records arrive via the proxy at capture time — nothing passive to scan
   return { tool, filesScanned: 0, recordsAdded: 0, linesSkipped: 0 };
 }
 
@@ -132,7 +134,10 @@ function syncFileTool(
   return { tool, filesScanned: deltas.length, recordsAdded: added, linesSkipped: skipped };
 }
 
-function fileContext(tool: ToolId, filePath: string): { tool: ToolId; project: string | null; sessionId: string | null } {
+function fileContext(
+  tool: ToolId,
+  filePath: string,
+): { tool: ToolId; project: string | null; sessionId: string | null } {
   const parentDir = path.basename(path.dirname(filePath));
   switch (tool) {
     case "claude-code":
@@ -158,9 +163,23 @@ function syncZcode(db: DatabaseSync): SyncReportEntry {
     refreshBuckets(db, unique);
     return { tool: "zcode", filesScanned: 1, recordsAdded: added, linesSkipped: 0 };
   } catch (err) {
-    console.error(
-      `zcode sync failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.error(`zcode sync failed: ${err instanceof Error ? err.message : String(err)}`);
     return { tool: "zcode", filesScanned: 0, recordsAdded: 0, linesSkipped: 0 };
+  }
+}
+
+function syncOpencode(db: DatabaseSync): SyncReportEntry {
+  try {
+    const dbFile = opencodeDbPath();
+    // full re-read each sync; message.id dedup keys keep it idempotent
+    const rows = fetchOpencodeUsage(dbFile, 0, Date.now() + 60_000);
+    const records = mapOpencodeRows(rows, { tool: "opencode" });
+    const unique = dedupeRecords(records);
+    const added = insertRecords(db, unique);
+    refreshBuckets(db, unique);
+    return { tool: "opencode", filesScanned: 1, recordsAdded: added, linesSkipped: 0 };
+  } catch (err) {
+    console.error(`opencode sync failed: ${err instanceof Error ? err.message : String(err)}`);
+    return { tool: "opencode", filesScanned: 0, recordsAdded: 0, linesSkipped: 0 };
   }
 }

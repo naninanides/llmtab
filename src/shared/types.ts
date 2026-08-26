@@ -3,7 +3,14 @@
  * StyleGuide §8: prefer interfaces for object shapes; discriminated unions over flags.
  */
 
-export const TOOL_IDS = ["claude-code", "codex", "gemini-cli", "zcode"] as const;
+export const TOOL_IDS = [
+  "claude-code",
+  "codex",
+  "gemini-cli",
+  "zcode",
+  "opencode",
+  "ollama",
+] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface UsageRecord {

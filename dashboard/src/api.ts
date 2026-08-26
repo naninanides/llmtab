@@ -29,6 +29,7 @@ export interface SummaryResponse {
   conversations: number;
   records?: number;
   unpricedModels: string[];
+  localModels?: string[];
   previous: Partial<SummaryResponse> | null;
 }
 
@@ -71,8 +72,10 @@ export const api = {
   daily: (r: RangeDef) => get<{ days: DayRow[] }>(`/api/daily?range=${rangeParam(r)}`),
   models: (r: RangeDef) => get<{ models: ModelRow[] }>(`/api/models?range=${rangeParam(r)}`),
   tools: (r: RangeDef) => get<{ tools: ToolRow[] }>(`/api/tools?range=${rangeParam(r)}`),
-  projects: (r: RangeDef) => get<{ projects: ProjectRow[] }>(`/api/projects?range=${rangeParam(r)}`),
-  heatmap: () => get<{ days: Array<{ day: string; totalTokens: number }> }>("/api/heatmap?months=12"),
+  projects: (r: RangeDef) =>
+    get<{ projects: ProjectRow[] }>(`/api/projects?range=${rangeParam(r)}`),
+  heatmap: () =>
+    get<{ days: Array<{ day: string; totalTokens: number }> }>("/api/heatmap?months=12"),
   lastSync: () =>
     get<{
       lastSync: {
