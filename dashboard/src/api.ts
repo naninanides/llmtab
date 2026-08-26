@@ -76,6 +76,26 @@ export interface ProjectRow {
   costUsd: number;
 }
 
+export interface QuotaWindow {
+  label: string;
+  used: number;
+  limit: number;
+  format: "percent" | "dollars" | "count";
+  resetsAt: string | null;
+  periodMs: number | null;
+}
+
+export interface QuotaProvider {
+  provider: string;
+  displayName: string;
+  status: "ok" | "no-auth" | "error" | "rate-limited";
+  plan?: string | null;
+  windows: QuotaWindow[];
+  warning?: string | null;
+  error?: string | null;
+  checkedAt: string;
+}
+
 export const api = {
   summary: (r: RangeDef) => get<SummaryResponse>(`/api/summary?range=${rangeParam(r)}`),
   daily: (r: RangeDef) => get<{ days: DayRow[] }>(`/api/daily?range=${rangeParam(r)}`),
@@ -85,6 +105,8 @@ export const api = {
     get<{ projects: ProjectRow[] }>(`/api/projects?range=${rangeParam(r)}`),
   heatmap: () =>
     get<{ days: Array<{ day: string; totalTokens: number }> }>("/api/heatmap?months=12"),
+  quotas: (force = false) =>
+    get<{ providers: QuotaProvider[]; fetchedAt: string }>(`/api/quotas${force ? "?force=1" : ""}`),
   lastSync: () =>
     get<{
       lastSync: {

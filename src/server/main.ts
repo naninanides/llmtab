@@ -45,6 +45,12 @@ export function createServer(): http.Server {
       const result = runSync(db);
       return sendJson(res, 200, { ok: result.status === "ok", ...result });
     }
+    if (url.pathname === "/api/quotas") {
+      const force = url.searchParams.get("force") === "1" || url.searchParams.get("force") === "true";
+      const { getQuotas } = await import("../quota/manager.js");
+      const quotas = await getQuotas({ force });
+      return sendJson(res, 200, quotas);
+    }
     if (url.pathname.startsWith("/api/")) {
       return handleApi(res, url);
     }

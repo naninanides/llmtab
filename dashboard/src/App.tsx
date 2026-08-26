@@ -11,6 +11,7 @@ import { Heatmap } from "@/components/Heatmap";
 import { DailyTable } from "@/components/DailyTable";
 import { ProjectList, ToolBreakdown } from "@/components/ToolProject";
 import { SyncFooter } from "@/components/SyncFooter";
+import { QuotaCard, DashboardQuotaSection } from "@/components/QuotaCard";
 import claudecodeSvg from "@lobehub/icons-static-svg/icons/claudecode.svg?raw";
 import codexSvg from "@lobehub/icons-static-svg/icons/codex.svg?raw";
 import geminicliSvg from "@lobehub/icons-static-svg/icons/geminicli.svg?raw";
@@ -79,6 +80,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
   const daily = useAsync(() => api.daily(range), [key]);
   const tools = useAsync(() => api.tools(range), [key]);
   const models = useAsync(() => api.models(range), [key]);
+  const quotas = useAsync(() => api.quotas(false), []);
   const dark = usePrefersDark();
 
   const s = summary.data;
@@ -100,6 +102,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
       daily.reload();
       tools.reload();
       models.reload();
+      quotas.reload();
     } catch {
       // sync failures surface via the refreshed data / tray; keep the popover calm
     } finally {
@@ -231,7 +234,11 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
             </div>
           </div>
 
-          <div className="border-t border-white/40 px-3 py-2.5 dark:border-white/10">
+            <div className="mt-2">
+              <QuotaCard providers={quotas.data?.providers ?? []} loading={quotas.loading} error={quotas.error} onRetry={() => quotas.reload()} />
+            </div>
+
+            <div className="border-t border-white/40 px-3 py-2.5 dark:border-white/10">
             <div className="grid grid-cols-2 gap-2.5">
               <button
                 onClick={() => void syncNow()}
@@ -444,6 +451,7 @@ function DashboardView({ onBack }: { onBack: () => void }): ReactNode {
   const tools = useAsync(() => api.tools(range), [range]);
   const projects = useAsync(() => api.projects(range), [range]);
   const heatmap = useAsync(() => api.heatmap(), []);
+  const quotas = useAsync(() => api.quotas(false), []);
 
   const s = summary.data;
   const p = s?.previous;
@@ -487,6 +495,8 @@ function DashboardView({ onBack }: { onBack: () => void }): ReactNode {
             unpricedModels={s.unpricedModels}
             localModels={s.localModels ?? []}
           />
+
+          <DashboardQuotaSection providers={quotas.data?.providers ?? []} loading={quotas.loading} error={quotas.error} onRetry={() => quotas.reload()} />
 
           {models.data && models.data.models.length > 0 && (
             <ModelCards models={models.data.models} localModels={s.localModels ?? []} />
