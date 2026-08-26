@@ -368,7 +368,11 @@ function TopModelRow({ model, idx, total }: { model: ModelRow; idx: number; tota
           style={{ width: `${pct}%`, background: MODEL_BAR_COLORS[idx % MODEL_BAR_COLORS.length] }}
         />
       </div>
-      <div className="mt-0.5 text-right text-[11px] text-slate-600 dark:text-slate-400">{cost(model.costUsd, { est: true })} est.</div>
+      <div className="mt-0.5 text-right text-[11px] text-slate-600 dark:text-slate-400">
+        {model.costUsd > 0
+          ? `${cost(model.costUsd, { est: true })} est.`
+          : "$0"}
+      </div>
     </li>
   );
 }

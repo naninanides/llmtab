@@ -28,6 +28,7 @@ export interface OpencodeRow {
     cacheRead: number;
     cacheWrite: number;
   };
+  costUsd: number;
 }
 
 /** Pure row → record mapping. */
@@ -45,7 +46,7 @@ export function mapOpencodeRows(rows: OpencodeRow[], ctx: ParseContext): UsageRe
       cacheReadTokens: Math.max(0, r.tokens.cacheRead),
       cacheWriteTokens: Math.max(0, r.tokens.cacheWrite),
       reasoningTokens: Math.max(0, r.tokens.reasoning),
-      costUsd: 0,
+      costUsd: typeof r.costUsd === "number" && Number.isFinite(r.costUsd) ? r.costUsd : 0,
       occurredAt: new Date(r.time_created).toISOString(),
       project: r.cwd,
       sessionId: r.session_id,

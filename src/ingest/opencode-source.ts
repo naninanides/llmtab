@@ -65,6 +65,7 @@ export function fetchOpencodeUsage(
         providerID: typeof parsed.providerID === "string" ? parsed.providerID : null,
         cwd: cwdOf(parsed),
         tokens: normalizeTokens(parsed.tokens),
+        costUsd: typeof parsed.cost === "number" && Number.isFinite(parsed.cost) ? parsed.cost : 0,
       });
     }
     return rows;
@@ -79,6 +80,7 @@ interface ParsedMessageData {
   providerID?: unknown;
   path?: unknown;
   tokens?: unknown;
+  cost?: unknown;
 }
 
 function parseMessageData(data: string): ParsedMessageData | null {

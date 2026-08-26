@@ -170,6 +170,7 @@ export function getUnpricedModels(db: DatabaseSync, w: Window): string[] {
         `SELECT DISTINCT model FROM usage_records r
          WHERE NOT EXISTS (SELECT 1 FROM pricing p WHERE p.model IN (r.model, lower(r.model)))
            AND EXISTS (SELECT 1 FROM usage_records r2 WHERE r2.model = r.model AND r2.tool <> 'ollama')
+           AND NOT EXISTS (SELECT 1 FROM usage_records r3 WHERE r3.model = r.model AND r3.cost_usd > 0)
            AND ${where(w).slice(5)}`,
       )
       .all(...params(w)) as unknown as Array<{ model: string }>
