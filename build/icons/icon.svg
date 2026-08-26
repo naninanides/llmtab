@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Rounded square background -->
+  <rect x="48" y="48" width="928" height="928" rx="160" fill="#1A1E26"/>
+  <!-- Gauge arc -->
+  <path d="M 182 620 A 340 340 0 0 1 842 620" fill="none" stroke="#12B981" stroke-width="82" stroke-linecap="round"/>
+  <!-- Ticks (radial) -->
+  <g fill="#1A1E26">
+    <!-- Approx 5 ticks distributed along arc -->
+    <rect x="228" y="420" width="22" height="52" rx="3" transform="rotate(-52 239 446)"/>
+    <rect x="322" y="322" width="22" height="52" rx="3" transform="rotate(-32 333 348)"/>
+    <rect x="500" y="262" width="22" height="52" rx="3" transform="rotate(0 511 288)"/>
+    <rect x="678" y="322" width="22" height="52" rx="3" transform="rotate(32 689 348)"/>
+    <rect x="772" y="420" width="22" height="52" rx="3" transform="rotate(52 783 446)"/>
+  </g>
+  <!-- Needle -->
+  <g fill="#12B981">
+    <!-- pivot square -->
+    <rect x="468" y="488" width="88" height="88" rx="14"/>
+    <!-- needle body pointing ~50deg (2 o'clock) -->
+    <path d="M 512 540 L 738 336 L 758 350 L 558 560 Z" fill="#12B981" stroke="#12B981" stroke-linejoin="round"/>
+    <!-- needle tip cap -->
+    <circle cx="740" cy="345" r="18" fill="#12B981" stroke="#1A1E26" stroke-width="6"/>
+  </g>
+  <!-- LLMTab text -->
+  <text x="512" y="800" text-anchor="middle" font-family="Inter, 'SF Pro Display', system-ui, sans-serif" font-size="152" font-weight="800" fill="#12B981" letter-spacing="-2">LLMTab</text>
+</svg>

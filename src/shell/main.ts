@@ -9,6 +9,9 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import type { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { readConfig, writeConfig } from "../shared/config.js";
 import { createCanvas } from "@napi-rs/canvas";
 
@@ -83,6 +86,12 @@ async function bootstrap(): Promise<void> {
     console.error("LLMTab shell failed to start services:", err);
     app.quit();
     return;
+  }
+
+  // Set Dock icon on macOS
+  const dockIcon = appIcon();
+  if (process.platform === "darwin" && dockIcon && app.dock) {
+    try { app.dock.setIcon(dockIcon); } catch { /* ignore */ }
   }
 
   tray = new Tray(trayIcon());
@@ -264,6 +273,7 @@ function createPopoverWindow(): void {
   if (win && !win.isDestroyed()) return;
   if (!dashboardPort) return;
   const isMac = process.platform === "darwin";
+  const icon = appIcon();
   const winOpts: Electron.BrowserWindowConstructorOptions = {
     width: 360,
     height: 640,
@@ -275,6 +285,7 @@ function createPopoverWindow(): void {
     maximizable: false,
     fullscreenable: false,
     title: "LLMTab",
+    ...(icon ? { icon } : {}),
     hasShadow: true,
     transparent: false,
     backgroundColor: isMac ? "#00000000" : "#1a1a1a",
@@ -477,8 +488,42 @@ function labelForTool(tool: string): string {
   return names[tool] ?? tool;
 }
 
+/** App icon for Dock / window (512px PNG). Falls back to tray template if missing. */
+function appIcon(): Electron.NativeImage | undefined {
+  for (const p of iconCandidates("icon-512.png", "icon-256.png", "icon.png")) {
+    if (fs.existsSync(p)) return nativeImage.createFromPath(p);
+  }
+  return undefined;
+}
+
+function resolveIconPath(file: string): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.join(here, `../../build/icons/${file}`), // dev: dist/shell → build/icons
+    path.join(here, `../build/icons/${file}`),
+    path.join(here, `../../assets/icons/${file}`), // packaged assets
+    path.join(process.cwd(), `build/icons/${file}`),
+    path.join(process.cwd(), `assets/icons/${file}`),
+  ];
+  for (const c of candidates) if (fs.existsSync(c)) return c;
+  return null;
+}
+
+function iconCandidates(...files: string[]): string[] {
+  return files.map((f) => resolveIconPath(f)).filter((p): p is string => p !== null);
+}
+
 /** Monochrome template PNG so macOS tints it correctly in the menu bar. */
 function trayIcon(): Electron.NativeImage {
+  const p16 = resolveIconPath("tray-16.png");
+  const p32 = resolveIconPath("tray-32.png");
+  if (p16) {
+    const icon = nativeImage.createFromPath(p16);
+    if (p32) icon.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(p32) });
+    icon.setTemplateImage(true);
+    return icon;
+  }
+  // fallback to embedded base64 (kept for packaged builds without icons)
   const icon = nativeImage.createFromDataURL(TEMPLATE_PNG_16);
   icon.addRepresentation({ scaleFactor: 2, dataURL: TEMPLATE_PNG_32 });
   icon.setTemplateImage(true);
