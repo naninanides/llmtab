@@ -13,7 +13,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readConfig, writeConfig } from "../shared/config.js";
-import { createCanvas } from "@napi-rs/canvas";
 
 /**
  * LLMTab menu-bar shell (PRD FR-50…55).
@@ -34,17 +33,6 @@ let win: BrowserWindow | null = null;
 let dashboardPort = 0;
 let refreshTimer: NodeJS.Timeout | null = null;
 let contextMenu: Menu | null = null;
-
-// Short labels for the menu-bar strip, like OpenUsage's provider glyphs.
-// Kept to 2 chars so "CC 8.2K · CX 1.1K" still fits in the strip.
-const TOOL_SHORT: Record<string, string> = {
-  "claude-code": "CC",
-  codex: "CX",
-  "gemini-cli": "GC",
-  zcode: "ZC",
-  opencode: "OC",
-  ollama: "OL",
-};
 
 interface TodayTotals {
   tokens: number;
@@ -138,7 +126,7 @@ async function refreshTray(db: DatabaseSync): Promise<void> {
     const tokens = Number(totals?.t ?? 0);
     const cost = Number(totals?.c ?? 0);
     tray.setToolTip(`LLMTab — today: ${compact(tokens)} tokens ($${cost.toFixed(2)} est.)`);
-    applyTrayTitle(tokens, cost, perTool);
+    applyTrayTitle();
     rebuildMenu(tokens, cost, perTool);
   } catch {
     // totals are cosmetic — never crash the shell over them
@@ -155,7 +143,7 @@ function rebuildMenu(
   if (tokens >= 0 && tray) {
     lastToday = { tokens, costUsd, perTool };
     tray.setToolTip(`LLMTab — today: ${compact(tokens)} tokens ($${costUsd.toFixed(2)} est.)`);
-    applyTrayTitle(tokens, costUsd, perTool);
+    applyTrayTitle();
   }
   const today = lastToday;
   const mb = readMenuBarConfig();
@@ -189,7 +177,7 @@ function rebuildMenu(
           checked: mb.mode !== "icon-only",
           click: (item) => {
             updateMenuBarConfig({ mode: item.checked ? "text" : "icon-only" });
-            if (lastToday) applyTrayTitle(lastToday.tokens, lastToday.costUsd, lastToday.perTool);
+            if (lastToday) applyTrayTitle();
           },
         },
         {
@@ -199,7 +187,7 @@ function rebuildMenu(
           enabled: mb.mode !== "icon-only",
           click: (item) => {
             updateMenuBarConfig({ showCost: item.checked });
-            if (lastToday) applyTrayTitle(lastToday.tokens, lastToday.costUsd, lastToday.perTool);
+            if (lastToday) applyTrayTitle();
           },
         },
         { type: "separator" },
@@ -210,7 +198,7 @@ function rebuildMenu(
           enabled: mb.mode !== "icon-only",
           click: () => {
             updateMenuBarConfig({ style: "compact" });
-            if (lastToday) applyTrayTitle(lastToday.tokens, lastToday.costUsd, lastToday.perTool);
+            if (lastToday) applyTrayTitle();
           },
         },
         {
@@ -220,7 +208,7 @@ function rebuildMenu(
           enabled: mb.mode !== "icon-only",
           click: () => {
             updateMenuBarConfig({ style: "per-tool" });
-            if (lastToday) applyTrayTitle(lastToday.tokens, lastToday.costUsd, lastToday.perTool);
+            if (lastToday) applyTrayTitle();
           },
         },
       ],
@@ -382,98 +370,10 @@ function updateMenuBarConfig(patch: MenuBarConfig): void {
   }
 }
 
-function applyTrayTitle(tokens: number, cost: number, perTool: Array<{ tool: string; totalTokens: number }>): void {
+function applyTrayTitle(): void {
   if (!tray) return;
-  // OpenUsage strip hides metrics with no data — fallback to icon only
-  if (tokens <= 0) {
-    tray.setTitle("");
-    return;
-  }
-  const mb = readMenuBarConfig();
-  if (mb.mode === "icon-only") {
-    tray.setTitle("");
-    return;
-  }
-  // Render as custom image icon for smaller font size (matches reference ~9px)
-  const icon = renderTrayIcon(tokens, cost, perTool, mb);
-  tray.setImage(icon);
-}
-
-function renderTrayIcon(
-  tokens: number,
-  cost: number,
-  perTool: Array<{ tool: string; totalTokens: number }>,
-  mb: MenuBarConfig,
-): Electron.NativeImage {
-  const text = formatTrayTitle(tokens, cost, perTool, mb);
-  const lines = text.split("\n");
-  const fontSize = 9;
-  const lineHeight = 11;
-  const iconSize = 14;
-  const iconPadding = 2;
-  const textPadding = 4;
-  const width = iconSize + iconPadding + textPadding + 22;
-  const height = Math.max(iconSize, lines.length * lineHeight + textPadding * 2);
-
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "transparent";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#ffffff";
-
-  // Draw bar chart icon (3 bars) on the left
-  const iconY = (height - iconSize) / 2;
-  const barWidth = 3;
-  const barGap = 1;
-  const barHeights = [6, 10, 14];
-  let barX = 2;
-  barHeights.forEach((h) => {
-    ctx.fillRect(barX, iconY + iconSize - h, barWidth, h);
-    barX += barWidth + barGap;
-  });
-
-  // Draw stacked text on the right
-  ctx.font = `${fontSize}px "SF Mono", "Menlo", monospace`;
-  ctx.textBaseline = "top";
-  const textX = iconSize + iconPadding;
-  lines.forEach((line, i) => {
-    ctx.fillText(line, textX, textPadding + i * lineHeight);
-  });
-
-  const png = canvas.toBuffer("image/png");
-  const img = nativeImage.createFromBuffer(png);
-  img.setTemplateImage(true);
-  return img;
-}
-
-function formatTrayTitle(
-  tokens: number,
-  cost: number,
-  perTool: Array<{ tool: string; totalTokens: number }>,
-  mb: MenuBarConfig,
-): string {
-  const showCost = mb.showCost !== false;
-  const style = mb.style ?? "compact";
-  if (style === "per-tool" && perTool.length > 0) {
-    // Show up to 2 pinned tools (or top 2 by tokens if none pinned), like OpenUsage's 2 stars per provider
-    const pinned = mb.pinnedTools?.length ? mb.pinnedTools : perTool.slice(0, 2).map((p) => p.tool);
-    const rows = pinned
-      .map((tool) => perTool.find((p) => p.tool === tool))
-      .filter((r): r is (typeof perTool)[number] => Boolean(r && r.totalTokens > 0))
-      .slice(0, 2);
-    if (rows.length === 0) return "";
-    // Two starred metrics from same provider stack as labeled pair — here two tools
-    // Render as "CC 8.2K · CX 1.1K" (no cost in per-tool mode to keep it short, like OpenUsage bars)
-    const parts = rows.map((r) => `${TOOL_SHORT[r.tool] ?? r.tool.slice(0, 2).toUpperCase()} ${compact(r.totalTokens)}`);
-    // If only one tool has data, append total so strip isn't empty
-    if (rows.length === 1 && perTool.length === 1) {
-      return showCost ? `${parts[0]}\n$${Math.round(cost)}` : parts[0] ?? "";
-    }
-    return parts.join("\n");
-  }
-  // Compact: single total + optional cost — stacked (tokens above, cost below) with small mono font
-  // Shortened format: 57M (no decimal), $3 (no cents) to reduce width
-  return showCost ? `${compactShort(tokens)}\n$${Math.round(cost)}` : compactShort(tokens);
+  // Use the existing tray icon files (speedometer, no text)
+  tray.setImage(trayIcon());
 }
 
 function labelForTool(tool: string): string {
@@ -537,15 +437,8 @@ function compact(n: number): string {
   return String(n);
 }
 
-function compactShort(n: number): string {
-  if (n >= 1e9) return `${Math.round(n / 1e9)}B`;
-  if (n >= 1e6) return `${Math.round(n / 1e6)}M`;
-  if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
-  return String(n);
-}
-
-// Monochrome bar-chart glyphs, base64-encoded so no binary asset ships in the
-// repo. Regenerate with scripts/make-tray-icon.py.
+// Monochrome speedometer glyphs, base64-encoded so no binary asset ships in the
+// repo. Regenerate with build/icons/generate.mjs.
 const TEMPLATE_PNG_16 =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAIklEQVR4nGNgGIrgPxTTx4D/DJgahrMB+BSPGkAvAwYGAAA3nUe5O1ArawAAAABJRU5ErkJggg==";
 const TEMPLATE_PNG_32 =
