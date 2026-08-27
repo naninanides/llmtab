@@ -7,11 +7,16 @@
  * force on people who just want the CLI. We locate the installed `llmtab` via
  * normal Node resolution, so npm/pnpm/yarn layouts all work without guessing
  * at node_modules paths.
+ *
+ * The shell is a menu-bar app, so it detaches by default: the prompt comes
+ * straight back, Ctrl-C no longer kills it, and closing the terminal leaves it
+ * running. Pass --foreground (-F) to keep it attached for debugging.
  */
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, openSync } from "node:fs";
 import path from "node:path";
+import { logFilePath, parseArgs } from "./launcher.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -59,12 +64,44 @@ function resolveElectron() {
   return electronPath;
 }
 
-const child = spawn(resolveElectron(), [resolveShellEntry(), ...process.argv.slice(2)], {
-  stdio: "inherit",
-});
+/**
+ * Opens the detached shell's log in append mode, creating the state dir if the
+ * CLI has never run. A log we cannot open is not worth aborting the launch for
+ * — the app matters more than its diagnostics — so fall back to discarding.
+ */
+function openLog() {
+  const file = logFilePath();
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    return { fd: openSync(file, "a"), file };
+  } catch {
+    return { fd: "ignore", file: null };
+  }
+}
 
-child.on("error", (err) => die(`failed to launch Electron: ${err.message}`));
-child.on("exit", (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 0);
-});
+const { foreground, forward } = parseArgs(process.argv.slice(2));
+const args = [resolveShellEntry(), ...forward];
+const electron = resolveElectron();
+
+if (foreground) {
+  const child = spawn(electron, args, { stdio: "inherit" });
+  child.on("error", (err) => die(`failed to launch Electron: ${err.message}`));
+  child.on("exit", (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    else process.exit(code ?? 0);
+  });
+} else {
+  // `detached` puts the shell in its own process group, so the terminal's
+  // Ctrl-C (SIGINT to the foreground group) and its SIGHUP on close no longer
+  // reach it. Redirecting stdio frees the prompt; unref lets us exit first.
+  const { fd, file } = openLog();
+  const child = spawn(electron, args, {
+    detached: true,
+    stdio: ["ignore", fd, fd],
+  });
+  child.on("error", (err) => die(`failed to launch Electron: ${err.message}`));
+  child.unref();
+  const where = file ? ` · log: ${file}` : "";
+  console.log(`llmtab-desktop: started in the background (pid ${child.pid})${where}`);
+  console.log("  stop it from the tray menu; run with --foreground to keep it attached.");
+}

@@ -23,6 +23,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Docs updated for the new delivery model and six-provider scope: PRD v1.1, PLANING M7/M8, StyleGuide menubar section, README supported-tools table
 
+## llmtab-desktop [2.0.3] — 2026-08-27
+
+### Changed
+
+- **`llmtab-desktop` now detaches from the terminal.** The launcher spawned
+  Electron into its own process group with stdio redirected to
+  `~/.llmtab/desktop.log`, so the prompt returns immediately, Ctrl-C no longer
+  kills the tray app, and closing the terminal leaves it running. Previously the
+  child shared the terminal's process group and the parent blocked waiting on
+  it, which meant a menu-bar app held the shell hostage for its whole lifetime.
+- `--foreground` (`-F`) keeps the old attached behavior for debugging. Every
+  other argument is still forwarded to Electron verbatim, and anything after
+  `--` belongs to the app.
+
 ## [2.0.1] — 2026-08-27
 
 ### Fixed

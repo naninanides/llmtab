@@ -7,3 +7,4 @@ coverage/
 .env
 .env.*
 *.tgz
+packages/desktop/package-lock.json
