@@ -21,6 +21,29 @@ links the bins of the package you name:
 npm i -g llmtab llmtab-desktop
 ```
 
+## Running in the background
+
+`llmtab-desktop` detaches from your terminal. The prompt comes straight back,
+Ctrl-C does not kill the tray app, and closing the terminal leaves it running:
+
+```sh
+llmtab-desktop
+# llmtab-desktop: started in the background (pid 51234) · log: ~/.llmtab/desktop.log
+```
+
+Quit it from the tray menu. Output goes to `~/.llmtab/desktop.log`
+(`$LLMTAB_HOME/desktop.log` if you set that).
+
+To keep it attached to the terminal instead — useful when debugging a crash on
+startup — pass `--foreground`:
+
+```sh
+llmtab-desktop --foreground     # or -F
+```
+
+Any other arguments are forwarded to Electron as-is; anything after `--` is
+left for the app.
+
 ## Platform support
 
 | OS      | status                                                         |
