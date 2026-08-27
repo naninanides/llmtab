@@ -2,25 +2,36 @@
 
 > Every token you burn, one click away. 100% local.
 
+[![npm](https://img.shields.io/npm/v/llmtab?label=llmtab)](https://www.npmjs.com/package/llmtab)
+[![npm](https://img.shields.io/npm/v/llmtab-desktop?label=llmtab-desktop)](https://www.npmjs.com/package/llmtab-desktop)
+[![node](https://img.shields.io/node/v/llmtab)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/llmtab)](LICENSE)
+
 LLMTab is a local-first LLM token usage & cost tracker that lives on your **menu bar** (macOS taskbar). A lightweight core scans the usage logs your AI coding tools already write to disk, captures local-model traffic from Ollama via a built-in proxy, aggregates token counts into a local SQLite database, and shows a fast private dashboard in a popup window — or any browser.
 
 - No account · No API keys · No cloud
 - Reads only token counts and metadata — **never** prompts or responses
 - One command → your usage in under 30 seconds
 
-## Quick start
+## Install
 
-LLMTab ships as two packages so you only download what you need.
+**Requirements:** Node.js ≥ 20. macOS is the tested platform; the CLI and browser dashboard run anywhere Node does.
+
+LLMTab ships as two npm packages so you only download what you need.
+
+### 1. CLI + browser dashboard — ~700 KB
 
 ```bash
-npm i -g llmtab        # CLI + browser dashboard  (~700 KB)
+npm i -g llmtab
 llmtab
 ```
 
-Want it on your menu bar instead? That needs an Electron runtime, which is ~200 MB — too much to force on people who only want the CLI, so it lives in a second package:
+### 2. Menu-bar app — optional, ~200 MB
+
+The tray shell needs an Electron runtime, which is too much to force on people who only want the CLI, so it lives in a second package:
 
 ```bash
-npm i -g llmtab-desktop   # tray app (pulls in llmtab + electron)
+npm i -g llmtab-desktop
 llmtab-desktop
 ```
 
@@ -30,14 +41,50 @@ npm only links the binaries of the package you name, so install **both** if you 
 npm i -g llmtab llmtab-desktop
 ```
 
-For a one-off run without installing anything: `npx llmtab`.
+### No install at all
+
+```bash
+npx llmtab      # one-off run, nothing left on disk except ~/.llmtab
+```
 
 | Package          | Command          | Size    | What you get                      |
 | ---------------- | ---------------- | ------- | --------------------------------- |
 | `llmtab`         | `llmtab`         | ~700 KB | CLI + dashboard in your browser   |
 | `llmtab-desktop` | `llmtab-desktop` | ~200 MB | Menu-bar / tray app (macOS-tuned) |
 
-Either way, LLMTab auto-detects installed tools, runs an incremental sync, and starts a local server on port 7878 (with automatic fallback). The tray build additionally puts an icon in your menu bar:
+### Verify
+
+```bash
+llmtab --version
+llmtab status     # per-tool integration state
+llmtab doctor     # node, DB writability, detected sources, pricing cache, proxy wiring
+```
+
+### From source
+
+```bash
+git clone https://github.com/naninanides/llmtab-v2.git
+cd llmtab-v2
+npm install
+npm run build
+node dist/cli/main.js      # run the local build
+npm link                   # ...or expose it globally as `llmtab`
+npm run app                # Electron tray shell against the local build
+```
+
+### Update / remove
+
+```bash
+npm i -g llmtab@latest llmtab-desktop@latest   # upgrade
+llmtab uninstall                               # delete all local state (~/.llmtab)
+npm rm -g llmtab llmtab-desktop                # remove the packages
+```
+
+Publishing new versions is documented in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
+
+## First run
+
+However you installed it, LLMTab auto-detects installed tools, runs an incremental sync, and starts a local server on port 7878 (with automatic fallback). The tray build additionally puts an icon in your menu bar:
 
 - **Tray tooltip / menu header** — today's tokens + estimated cost
 - **Dashboard** — compact popup window (Esc or blur closes it)
