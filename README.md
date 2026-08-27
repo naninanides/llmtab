@@ -6,15 +6,38 @@ LLMTab is a local-first LLM token usage & cost tracker that lives on your **menu
 
 - No account · No API keys · No cloud
 - Reads only token counts and metadata — **never** prompts or responses
-- `npx llmtab` → menu-bar app with your usage in under 30 seconds
+- One command → your usage in under 30 seconds
 
 ## Quick start
 
+LLMTab ships as two packages so you only download what you need.
+
 ```bash
-npx llmtab
+npm i -g llmtab        # CLI + browser dashboard  (~700 KB)
+llmtab
 ```
 
-That's it. LLMTab auto-detects installed tools, runs an incremental sync, starts a local server on port 7878 (with automatic fallback), and puts an icon in your menu bar:
+Want it on your menu bar instead? That needs an Electron runtime, which is ~200 MB — too much to force on people who only want the CLI, so it lives in a second package:
+
+```bash
+npm i -g llmtab-desktop   # tray app (pulls in llmtab + electron)
+llmtab-desktop
+```
+
+npm only links the binaries of the package you name, so install **both** if you want the `llmtab` command on your PATH alongside the tray app:
+
+```bash
+npm i -g llmtab llmtab-desktop
+```
+
+For a one-off run without installing anything: `npx llmtab`.
+
+| Package          | Command          | Size    | What you get                      |
+| ---------------- | ---------------- | ------- | --------------------------------- |
+| `llmtab`         | `llmtab`         | ~700 KB | CLI + dashboard in your browser   |
+| `llmtab-desktop` | `llmtab-desktop` | ~200 MB | Menu-bar / tray app (macOS-tuned) |
+
+Either way, LLMTab auto-detects installed tools, runs an incremental sync, and starts a local server on port 7878 (with automatic fallback). The tray build additionally puts an icon in your menu bar:
 
 - **Tray tooltip / menu header** — today's tokens + estimated cost
 - **Dashboard** — compact popup window (Esc or blur closes it)
@@ -68,8 +91,8 @@ Costs are estimates from the [LiteLLM community price list](https://github.com/B
 
 | Command            | What it does                                                             |
 | ------------------ | ------------------------------------------------------------------------ |
-| `llmtab`           | sync → menu-bar app (falls back to serve + browser when no display)      |
-| `llmtab app`       | launch the Electron menu-bar shell                                       |
+| `llmtab`           | sync → menu-bar app when the shell is installed, else serve + browser    |
+| `llmtab-desktop`   | launch the Electron menu-bar shell (from the `llmtab-desktop` package)   |
 | `llmtab sync`      | manual incremental scan (`--verbose`, `--rebuild`)                       |
 | `llmtab watch`     | keep the DB fresh via filesystem watchers                                |
 | `llmtab serve`     | serve the dashboard without opening a browser (`-p <port>`)              |

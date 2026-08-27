@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@lobehub/icons": "^5.16.0",
+    "@lobehub/icons-static-svg": "^1.94.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^3.10.1"

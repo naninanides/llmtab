@@ -1,7 +1,7 @@
 {
   "name": "llmtab",
   "version": "2.0.0",
-  "description": "Local-first LLM token usage & cost tracker served in a browser tab.",
+  "description": "Local-first LLM token usage & cost tracker for Claude Code, Codex, OpenCode, Gemini CLI, ZCode and Ollama.",
   "type": "module",
   "license": "MIT",
   "workspaces": [
@@ -17,12 +17,13 @@
     "dist",
     "dashboard-dist",
     "assets/icons",
-    "build/icons"
+    "build/icons",
+    "build/prepare.mjs"
   ],
   "scripts": {
     "dev": "concurrently -n cli,dashboard -c blue,green \"npm run build:cli -- --watch\" \"npm run dev --workspace dashboard\"",
     "build": "npm run build:cli && npm run build:dashboard",
-    "build:cli": "tsc -p tsconfig.json && node -e \"const fs=require('node:fs');fs.mkdirSync('dist/cost/assets',{recursive:true});fs.copyFileSync('src/cost/assets/pricing-snapshot.json','dist/cost/assets/pricing-snapshot.json');for(const f of ['icon-512.png','icon-256.png','tray-16.png','tray-32.png','LLMTab.icns']){try{fs.mkdirSync('dist/icons',{recursive:true});const s='build/icons/'+f;if(fs.existsSync(s))fs.copyFileSync(s,'dist/icons/'+f);}catch{}}\"",
+    "build:cli": "npm run clean && tsc -p tsconfig.build.json && node -e \"const fs=require('node:fs');fs.mkdirSync('dist/cost/assets',{recursive:true});fs.copyFileSync('src/cost/assets/pricing-snapshot.json','dist/cost/assets/pricing-snapshot.json');for(const f of ['icon-512.png','icon-256.png','tray-16.png','tray-32.png','LLMTab.icns']){try{fs.mkdirSync('dist/icons',{recursive:true});const s='build/icons/'+f;if(fs.existsSync(s))fs.copyFileSync(s,'dist/icons/'+f);}catch{}}\"",
     "build:icons": "node build/icons/generate.mjs",
     "build:dashboard": "npm run build --workspace dashboard",
     "app": "electron dist/shell/main.js",
@@ -31,12 +32,12 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace dashboard",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepare": "node build/prepare.mjs",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" -r fs"
   },
   "dependencies": {
-    "@lobehub/icons": "^5.16.0",
-    "@lobehub/icons-static-svg": "^1.94.0",
-    "@napi-rs/canvas": "^1.0.8",
     "commander": "^14.0.0"
   },
   "devDependencies": {
@@ -48,6 +49,31 @@
     "eslint": "^9.39.0",
     "prettier": "^3.6.0",
     "typescript": "^5.9.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "@napi-rs/canvas": "^1.0.8"
+  },
+  "keywords": [
+    "llm",
+    "tokens",
+    "usage",
+    "cost",
+    "tracker",
+    "claude-code",
+    "codex",
+    "opencode",
+    "gemini-cli",
+    "ollama",
+    "cli",
+    "menubar",
+    "local-first"
+  ],
+  "author": "naninanides",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naninanides/llmtab-v2.git"
+  },
+  "homepage": "https://github.com/naninanides/llmtab-v2#readme",
+  "bugs": {
+    "url": "https://github.com/naninanides/llmtab-v2/issues"
   }
 }

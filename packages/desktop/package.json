@@ -1,0 +1,42 @@
+{
+  "name": "llmtab-desktop",
+  "version": "2.0.0",
+  "description": "Menu-bar / tray app for LLMTab — adds the Electron shell to the llmtab CLI.",
+  "type": "module",
+  "license": "MIT",
+  "author": "naninanides",
+  "keywords": [
+    "llm",
+    "tokens",
+    "usage",
+    "cost",
+    "tracker",
+    "menubar",
+    "tray",
+    "electron",
+    "llmtab"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naninanides/llmtab-v2.git",
+    "directory": "packages/desktop"
+  },
+  "homepage": "https://github.com/naninanides/llmtab-v2#readme",
+  "bugs": {
+    "url": "https://github.com/naninanides/llmtab-v2/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "llmtab-desktop": "./bin.mjs"
+  },
+  "files": [
+    "bin.mjs",
+    "README.md"
+  ],
+  "dependencies": {
+    "electron": "^44.0.0",
+    "llmtab": "^2.0.0"
+  }
+}
