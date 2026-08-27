@@ -46,7 +46,8 @@ export function createServer(): http.Server {
       return sendJson(res, 200, { ok: result.status === "ok", ...result });
     }
     if (url.pathname === "/api/quotas") {
-      const force = url.searchParams.get("force") === "1" || url.searchParams.get("force") === "true";
+      const force =
+        url.searchParams.get("force") === "1" || url.searchParams.get("force") === "true";
       const { getQuotas } = await import("../quota/manager.js");
       const quotas = await getQuotas({ force });
       return sendJson(res, 200, quotas);
@@ -148,18 +149,32 @@ export function createServer(): http.Server {
   return server;
 }
 
-/** Serves the built dashboard; works both from repo layout and packaged dist. */
-function staticRoot(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * Locates the built dashboard.
+ *
+ * `dashboard-dist/` sits at the package root and ships in the npm tarball, so
+ * the only reliable anchor is this module's own location: `dist/server` is two
+ * levels below the package root in both the repo and an installed copy. Walking
+ * three levels up lands in `node_modules/` (or above the repo) and finds
+ * nothing, which is what broke every global install.
+ *
+ * Exported for tests; `moduleDir` and `cwd` are injected so both layouts can be
+ * exercised without an actual install.
+ */
+export function resolveStaticRoot(moduleDir: string, cwd: string = process.cwd()): string {
   const candidates = [
-    path.join(here, "../../../dashboard-dist"), // dist/server → repo/dashboard-dist
-    path.join(here, "../dashboard-dist"),
-    path.join(process.cwd(), "dashboard-dist"),
+    path.join(moduleDir, "../../dashboard-dist"), // dist/server → package root
+    path.join(moduleDir, "../dashboard-dist"), // flattened builds
+    path.join(cwd, "dashboard-dist"), // dev server run from the repo
   ];
   for (const c of candidates) {
     if (fs.existsSync(path.join(c, "index.html"))) return c;
   }
-  return candidates[candidates.length - 1] ?? process.cwd();
+  return candidates[0] ?? cwd;
+}
+
+function staticRoot(): string {
+  return resolveStaticRoot(path.dirname(fileURLToPath(import.meta.url)));
 }
 
 const MIME: Record<string, string> = {

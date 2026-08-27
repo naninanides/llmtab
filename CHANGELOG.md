@@ -23,6 +23,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Docs updated for the new delivery model and six-provider scope: PRD v1.1, PLANING M7/M8, StyleGuide menubar section, README supported-tools table
 
+## [2.0.1] — 2026-08-27
+
+### Fixed
+
+- **Dashboard 404 after a global install.** `resolveStaticRoot()` looked for
+  `dashboard-dist/` three directory levels above `dist/server`, which lands in
+  `node_modules/` rather than the package root, so every `npm i -g llmtab`
+  install answered `{"error":"dashboard not built"}`. The built dashboard was
+  always in the tarball; only the lookup was wrong. It now anchors two levels
+  up, which is the package root in both the repo and an installed copy, and is
+  covered by tests over both layouts.
+
 ## [2.0.0] — 2026-08-26
 
 First release. Local-first LLM token usage & cost tracker for Claude Code, Codex CLI, Gemini CLI, and ZCode.
