@@ -2,12 +2,14 @@
 
 > Every token you burn, one click away. 100% local.
 
-[![npm](https://img.shields.io/npm/v/llmtab?label=llmtab)](https://www.npmjs.com/package/llmtab)
 [![npm](https://img.shields.io/npm/v/llmtab-desktop?label=llmtab-desktop)](https://www.npmjs.com/package/llmtab-desktop)
+[![npm](https://img.shields.io/npm/v/llmtab?label=llmtab)](https://www.npmjs.com/package/llmtab)
 [![node](https://img.shields.io/node/v/llmtab)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/llmtab)](LICENSE)
 
-LLMTab is a local-first LLM token usage & cost tracker that lives on your **menu bar** (macOS taskbar). A lightweight core scans the usage logs your AI coding tools already write to disk, captures local-model traffic from Ollama via a built-in proxy, aggregates token counts into a local SQLite database, and shows a fast private dashboard in a popup window — or any browser.
+LLMTab is a local-first LLM token usage & cost tracker that lives in your **menu bar**. Today's tokens and cost sit next to the clock; click for a full dashboard. Underneath, it scans the usage logs your AI coding tools already write to disk, captures local-model traffic from Ollama through a built-in proxy, and aggregates everything into a SQLite database on your own machine.
+
+The tray app is `llmtab-desktop`. The engine behind it is also a standalone CLI (`llmtab`) if you'd rather skip Electron.
 
 - No account · No API keys · No cloud
 - Reads only token counts and metadata — **never** prompts or responses
@@ -15,50 +17,51 @@ LLMTab is a local-first LLM token usage & cost tracker that lives on your **menu
 
 ## Install
 
-**Requirements:** Node.js ≥ 20. macOS is the tested platform; the CLI and browser dashboard run anywhere Node does.
-
-LLMTab ships as two npm packages so you only download what you need.
-
-### 1. CLI + browser dashboard — ~700 KB
-
-```bash
-npm i -g llmtab
-llmtab
-```
-
-### 2. Menu-bar app — optional, ~200 MB
-
-The tray shell needs an Electron runtime, which is too much to force on people who only want the CLI, so it lives in a second package:
+**Requirements:** Node.js ≥ 20. macOS is the tested platform.
 
 ```bash
 npm i -g llmtab-desktop
 llmtab-desktop
 ```
 
-npm only links the binaries of the package you name, so install **both** if you want the `llmtab` command on your PATH alongside the tray app:
+That's it. An icon appears in your menu bar showing today's tokens and cost, and
+the command hands your terminal straight back — the app keeps running after you
+press Ctrl-C or close the terminal. Quit it from the tray menu.
+
+`llmtab-desktop` pulls in the `llmtab` engine plus an Electron runtime (~200 MB).
+npm links only the binaries of the package you name, so add `llmtab` too if you
+also want the CLI on your PATH:
 
 ```bash
-npm i -g llmtab llmtab-desktop
+npm i -g llmtab-desktop llmtab
 ```
 
-### No install at all
+### Don't want Electron?
+
+The engine ships as its own package with no GUI dependency — same dashboard,
+served to your browser instead of a popup:
 
 ```bash
-npx llmtab      # one-off run, nothing left on disk except ~/.llmtab
+npm i -g llmtab      # ~700 KB
+llmtab               # sync, then open localhost:7878
 ```
 
-| Package          | Command          | Size    | What you get                      |
-| ---------------- | ---------------- | ------- | --------------------------------- |
-| `llmtab`         | `llmtab`         | ~700 KB | CLI + dashboard in your browser   |
-| `llmtab-desktop` | `llmtab-desktop` | ~200 MB | Menu-bar / tray app (macOS-tuned) |
+| Package          | Command          | Size    | What you get                                |
+| ---------------- | ---------------- | ------- | ------------------------------------------- |
+| `llmtab-desktop` | `llmtab-desktop` | ~200 MB | **Menu-bar app** (macOS-tuned) + the engine |
+| `llmtab`         | `llmtab`         | ~700 KB | Engine, CLI and dashboard in your browser   |
+
+For a one-off look with nothing installed: `npx llmtab`.
 
 ### Verify
 
 ```bash
-llmtab --version
-llmtab status     # per-tool integration state
-llmtab doctor     # node, DB writability, detected sources, pricing cache, proxy wiring
+llmtab-desktop --foreground     # run attached — startup errors go to your terminal
+llmtab status                   # per-tool integration state
+llmtab doctor                   # node, DB writability, sources, pricing cache, proxy wiring
 ```
+
+A detached shell writes its output to `~/.llmtab/desktop.log`.
 
 ### From source
 
@@ -67,24 +70,24 @@ git clone https://github.com/naninanides/llmtab-v2.git
 cd llmtab-v2
 npm install
 npm run build
-node dist/cli/main.js      # run the local build
-npm link                   # ...or expose it globally as `llmtab`
-npm run app                # Electron tray shell against the local build
+npm run app                  # Electron tray shell against the local build
+node dist/cli/main.js        # or drive the CLI directly
 ```
 
 ### Update / remove
 
 ```bash
-npm i -g llmtab@latest llmtab-desktop@latest   # upgrade
+npm i -g llmtab-desktop@latest llmtab@latest   # upgrade
 llmtab uninstall                               # delete all local state (~/.llmtab)
-npm rm -g llmtab llmtab-desktop                # remove the packages
+npm rm -g llmtab-desktop llmtab                # remove the packages
 ```
 
 Publishing new versions is documented in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
-## First run
+## In the menu bar
 
-However you installed it, LLMTab auto-detects installed tools, runs an incremental sync, and starts a local server on port 7878 (with automatic fallback). The tray build additionally puts an icon in your menu bar:
+LLMTab auto-detects your installed tools, runs an incremental sync, and starts a
+local server on port 7878 (with automatic fallback). The tray icon gives you:
 
 - **Tray tooltip / menu header** — today's tokens + estimated cost
 - **Dashboard** — compact popup window (Esc or blur closes it)
@@ -92,7 +95,8 @@ However you installed it, LLMTab auto-detects installed tools, runs an increment
 - **Sync now** — force a rescan
 - **Quit**
 
-Prefer the classic flow? `llmtab serve` skips the shell entirely and just serves the dashboard URL.
+Running headless, or on a machine where you'd rather not pay for Electron?
+`llmtab serve` skips the shell and just serves the dashboard URL.
 
 ## Supported tools
 
@@ -136,17 +140,18 @@ Costs are estimates from the [LiteLLM community price list](https://github.com/B
 
 ## CLI commands
 
-| Command            | What it does                                                             |
-| ------------------ | ------------------------------------------------------------------------ |
-| `llmtab`           | sync → menu-bar app when the shell is installed, else serve + browser    |
-| `llmtab-desktop`   | launch the Electron menu-bar shell (from the `llmtab-desktop` package)   |
-| `llmtab sync`      | manual incremental scan (`--verbose`, `--rebuild`)                       |
-| `llmtab watch`     | keep the DB fresh via filesystem watchers                                |
-| `llmtab serve`     | serve the dashboard without opening a browser (`-p <port>`)              |
-| `llmtab proxy`     | run the Ollama capture proxy (`--off` to disable)                        |
-| `llmtab status`    | per-tool integration state                                               |
-| `llmtab doctor`    | health check: node, DB writability, sources, pricing cache, proxy wiring |
-| `llmtab uninstall` | remove all LLMTab state (`~/.llmtab`)                                    |
+| Command                       | What it does                                                             |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `llmtab-desktop`              | launch the menu-bar shell, detached from the terminal                    |
+| `llmtab-desktop --foreground` | same, but attached — startup errors land in your terminal (`-F`)         |
+| `llmtab`                      | sync → menu-bar app when the shell is installed, else serve + browser    |
+| `llmtab sync`                 | manual incremental scan (`--verbose`, `--rebuild`)                       |
+| `llmtab watch`                | keep the DB fresh via filesystem watchers                                |
+| `llmtab serve`                | serve the dashboard without opening a browser (`-p <port>`)              |
+| `llmtab proxy`                | run the Ollama capture proxy (`--off` to disable)                        |
+| `llmtab status`               | per-tool integration state                                               |
+| `llmtab doctor`               | health check: node, DB writability, sources, pricing cache, proxy wiring |
+| `llmtab uninstall`            | remove all LLMTab state (`~/.llmtab`)                                    |
 
 Environment flags: `LLMTAB_OFFLINE=1` disables the daily pricing fetch entirely.
 
@@ -188,6 +193,11 @@ Its price isn't in the community list yet. Tokens are still tracked; the badge t
 
 **Does the menu-bar app cost RAM?**
 The Electron shell is the convenient path; if you prefer zero extra footprint, use `llmtab serve` (or `watch`) and open `localhost:7878` in a tab — same dashboard, no shell.
+
+**I closed my terminal — did the tray app die?**
+No. `llmtab-desktop` detaches on launch: it runs in its own process group, so
+neither Ctrl-C nor closing the terminal reaches it. Quit it from the tray menu.
+Its output goes to `~/.llmtab/desktop.log`.
 
 **Windows/Linux support?**
 Should work anywhere Node ≥ 20 runs, but macOS is the tested platform for v1 (the tray/popup shell is macOS-first).
