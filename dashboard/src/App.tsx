@@ -177,7 +177,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
         ) : (
           <>
             {popoverTab === "usage" && (
-              <div className="p-[13px]">
+              <div key="usage" className="panel-in p-[13px]">
                 <span className="font-silkscreen text-[8px] tracking-[0.1em] text-muted">
                   &gt; TOKENS · {CAPTION[period].toUpperCase()}
                 </span>
@@ -258,7 +258,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
             )}
 
             {popoverTab === "quotas" && (
-              <div className="p-3">
+              <div key="quotas" className="panel-in p-3">
                 <QuotaCard
                   providers={quotas.data?.providers ?? []}
                   loading={quotas.loading}
@@ -270,7 +270,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
             )}
 
             {popoverTab === "sources" && (
-              <div className="p-3">
+              <div key="sources" className="panel-in p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex gap-1">
                     {(["sources", "models"] as const).map((t) => (

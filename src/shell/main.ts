@@ -342,27 +342,68 @@ function createPopoverWindow(): void {
     win.setWindowButtonVisibility(false);
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
-  // Auto-fit height to content — eliminates empty space when USAGE tab is short (vs 640 fixed)
+  // Auto-fit height to content — eliminates empty space when USAGE tab is short
+  // (vs 640 fixed). Driven by a ResizeObserver in the renderer rather than a
+  // poll: a 300ms tick meant a tab switch resized the window up to 300ms after
+  // the content changed, which read as a lurch. The interval below is only a
+  // safety net for the rare change an observer misses.
   let fitTimer: NodeJS.Timeout | null = null;
+
+  const MEASURE = `(() => {
+    const root = document.getElementById('root');
+    const bevel = document.querySelector('.bevel');
+    const rh = root ? root.scrollHeight : 0;
+    const bh = bevel ? bevel.getBoundingClientRect().height + 16 : 0;
+    return Math.min(640, Math.max(240, Math.max(rh, bh, document.body.scrollHeight)));
+  })()`;
+
+  // Reports height the moment content changes. Title-cased channel so it cannot
+  // collide with anything the app logs.
+  const OBSERVE = `(() => {
+    if (window.__llmtabFit) return true;
+    const emit = () => {
+      try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
+    };
+    const ro = new ResizeObserver(emit);
+    const root = document.getElementById('root');
+    if (root) ro.observe(root);
+    window.__llmtabFit = { ro };
+    emit();
+    return true;
+  })()`;
+
+  const applyHeight = (raw: unknown): void => {
+    if (!win || win.isDestroyed() || !win.isVisible()) return;
+    const target = Number(raw);
+    if (!Number.isFinite(target) || target <= 0) return;
+    const [, curH] = win.getSize() as [number, number];
+    // 4px deadband: ignore sub-pixel churn, act on real layout changes.
+    if (curH !== undefined && Math.abs(curH - target) > 4) {
+      win.setSize(360, Math.round(target), false);
+      positionWindow();
+    }
+  };
+
   const fitPopoverHeight = async (): Promise<void> => {
     if (!win || win.isDestroyed() || !win.isVisible()) return;
     try {
-      const h = await win.webContents.executeJavaScript(
-        "(() => { const root = document.getElementById('root'); const bevel = document.querySelector('.bevel'); const rh = root ? root.scrollHeight : 0; const bh = bevel ? bevel.getBoundingClientRect().height + 16 : 0; const sh = document.body.scrollHeight; return Math.min(640, Math.max(240, Math.max(rh, bh, sh))); })()",
-        true,
-      );
-      const target = Number(h) || 400;
-      const [, curH] = win.getSize() as [number, number];
-      if (curH !== undefined && Math.abs(curH - target) > 4) {
-        win.setSize(360, target, false);
-        positionWindow();
-      }
+      applyHeight(await win.webContents.executeJavaScript(MEASURE, true));
     } catch {}
   };
+
+  // The observer speaks through console messages — no preload, no IPC surface.
+  // Electron 44 carries the details on the event object itself.
+  win.webContents.on("console-message", (details) => {
+    const message = details.message ?? "";
+    if (message.startsWith("LLMTAB_FIT:")) applyHeight(message.slice(11));
+  });
+
   const startFit = (): void => {
     if (fitTimer) clearInterval(fitTimer);
-    fitTimer = setInterval(() => void fitPopoverHeight(), 300);
+    // Was 300ms; the observer carries the real work now.
+    fitTimer = setInterval(() => void fitPopoverHeight(), 2000);
     fitTimer.unref?.();
+    void win?.webContents.executeJavaScript(OBSERVE, true).catch(() => {});
     void fitPopoverHeight();
   };
   const stopFit = (): void => {
