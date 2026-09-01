@@ -150,15 +150,20 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
         onChange={(id) => setPopoverTab(id as PopoverTab)}
       />
       <div className="bevel">
-        {/* Title bar: brand, a dithered drag region, and the range selector. */}
-        <div className="flex items-center gap-[10px] bg-amber px-[10px] py-[8px] text-rail shadow-[inset_0_4px_0_0_rgba(255,255,255,0.35),inset_0_-4px_0_0_rgba(0,0,0,0.3)]">
-          <span className="font-silkscreen text-[11px] tracking-[0.06em]">LLMTAB</span>
-          <span
-            className="h-[9px] flex-1 self-center opacity-30 [background-image:linear-gradient(45deg,currentColor_25%,transparent_25%,transparent_75%,currentColor_75%),linear-gradient(45deg,currentColor_25%,transparent_25%,transparent_75%,currentColor_75%)] [background-position:0_0,2px_2px] [background-size:4px_4px]"
-            aria-hidden="true"
-          />
-          <PeriodToggle period={period} onChange={setPeriod} />
-        </div>
+        {/* Title bar: brand, a dithered drag region, and the range selector.
+            Hidden on Quotas — those are live provider limits, so a time range
+            means nothing there and the control would be dead. Usage and
+            Sources both filter by it, so both keep it. */}
+        {popoverTab !== "quotas" && (
+          <div className="flex items-center gap-[10px] bg-amber px-[10px] py-[8px] text-rail shadow-[inset_0_4px_0_0_rgba(255,255,255,0.35),inset_0_-4px_0_0_rgba(0,0,0,0.3)]">
+            <span className="font-silkscreen text-[11px] tracking-[0.06em]">LLMTAB</span>
+            <span
+              className="h-[9px] flex-1 self-center opacity-30 [background-image:linear-gradient(45deg,currentColor_25%,transparent_25%,transparent_75%,currentColor_75%),linear-gradient(45deg,currentColor_25%,transparent_25%,transparent_75%,currentColor_75%)] [background-position:0_0,2px_2px] [background-size:4px_4px]"
+              aria-hidden="true"
+            />
+            <PeriodToggle period={period} onChange={setPeriod} />
+          </div>
+        )}
         {err ? (
           <div className="p-5 text-center">
             <p className="text-sm font-medium text-alert">{err}</p>
