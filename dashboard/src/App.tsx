@@ -1,9 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { RangeProvider, useRange } from "@/hooks/useRange";
 import { useAsync, Skeleton } from "@/hooks/useAsync";
-import { usePrefersDark } from "@/hooks/usePrefersDark";
-import { api, rangeParam, type DayRow, type ModelRow, type RangeDef, type SummaryResponse, type ToolRow } from "@/api";
+import { api, rangeParam, type ModelRow, type RangeDef, type SummaryResponse, type ToolRow } from "@/api";
 import { compact, cost, percent } from "@/format";
 import { HeroCard, ModelCards, RangeTabs, StatCard } from "@/components/Cards";
 import { TrendChart } from "@/components/TrendChart";
@@ -12,6 +10,9 @@ import { DailyTable } from "@/components/DailyTable";
 import { ProjectList, ToolBreakdown } from "@/components/ToolProject";
 import { SyncFooter } from "@/components/SyncFooter";
 import { QuotaCard, DashboardQuotaSection } from "@/components/QuotaCard";
+import { TabStrip } from "@/components/pixel/TabStrip";
+import { BlockMeter } from "@/components/pixel/BlockMeter";
+import { resetLabel, worstWindow } from "@/quota";
 import claudecodeSvg from "@lobehub/icons-static-svg/icons/claudecode.svg?raw";
 import codexSvg from "@lobehub/icons-static-svg/icons/codex.svg?raw";
 import geminicliSvg from "@lobehub/icons-static-svg/icons/geminicli.svg?raw";
@@ -45,7 +46,7 @@ export default function App(): ReactNode {
   return (
     <RangeProvider>
       {view === "popover" ? (
-        <div className="min-h-screen w-full bg-gradient-to-b from-[#b4cdf4] via-[#92b3ee] to-[#6f9ce9] dark:from-[#22304e] dark:via-[#172238] dark:to-[#0f1626]">
+        <div className="w-full bg-ground">
           <div className="mx-auto max-w-[360px] p-2">
             <PopoverView onOpenDashboard={() => setView("dashboard")} />
           </div>
@@ -68,12 +69,29 @@ function deltaPct(cur: number | undefined, prev: number | undefined): number | n
 
 /* ── Popover (reference design) ─────────────────────────────────────── */
 
+type PopoverTab = "usage" | "quotas" | "sources";
+
 function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): ReactNode {
   const [period, setPeriod] = useState<Period>("7d");
   const [syncing, setSyncing] = useState(false);
-  const [tab, setTab] = useState<"sources" | "models">(() =>
+  const initialTab: PopoverTab = (() => {
+    if (window.location.hash === "#models") return "sources";
+    if (window.location.hash === "#quotas") return "quotas";
+    return "usage";
+  })();
+  const [popoverTab, setPopoverTab] = useState<PopoverTab>(initialTab);
+  const [sourcesSubTab, setSourcesSubTab] = useState<"sources" | "models">(() =>
     window.location.hash === "#models" ? "models" : "sources",
   );
+  // Range resets to 7d on open, selected tab resets to Usage — popover stays stateless
+  useEffect(() => {
+    const onFocus = () => {
+      setPeriod("7d");
+      setPopoverTab("usage");
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
   const range = RANGE_FOR[period];
   const key = rangeParam(range);
   const summary = useAsync(() => api.summary(range), [key]);
@@ -81,7 +99,6 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
   const tools = useAsync(() => api.tools(range), [key]);
   const models = useAsync(() => api.models(range), [key]);
   const quotas = useAsync(() => api.quotas(false), []);
-  const dark = usePrefersDark();
 
   const s = summary.data;
   const err = summary.error ?? daily.error ?? tools.error ?? models.error;
@@ -92,7 +109,9 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
   const cloudTokens = cloudRows.reduce((a, t) => a + t.totalTokens, 0);
   const cloudCost = cloudRows.reduce((a, t) => a + t.costUsd, 0);
   const trend = deltaPct(s?.totalTokens, s?.previous?.totalTokens);
-  const cloudDelta = deltaPct(s?.costUsd, s?.previous?.costUsd);
+
+  const worst = worstWindow(quotas.data?.providers ?? []);
+  const quotaDot = worst !== null && worst.pct >= 90;
 
   async function syncNow(): Promise<void> {
     setSyncing(true);
@@ -110,188 +129,249 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
     }
   }
 
+  async function refreshQuotas(): Promise<void> {
+    try {
+      await api.quotas(true);
+    } catch {
+      // api.quotas force failure surfaces via error state
+    }
+    quotas.reload();
+  }
+
   return (
-    <div className="rounded-3xl border border-white/50 bg-white/25 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.07]">
-      {err ? (
-        <div className="p-5 text-center">
-          <p className="text-sm font-medium text-rose-900 dark:text-rose-200">{err}</p>
-          <button
-            onClick={() => {
-              summary.reload();
-              daily.reload();
-              tools.reload();
-              models.reload();
-            }}
-            className="mt-3 rounded-full bg-white/70 px-4 py-1.5 text-sm font-semibold text-slate-900 hover:bg-white dark:bg-white/15 dark:text-white dark:hover:bg-white/25"
-          >
-            Retry
-          </button>
+    <div>
+      <TabStrip
+        tabs={[
+          { id: "usage", label: "USAGE" },
+          { id: "quotas", label: "QUOTAS", dot: quotaDot, dotLabel: "1 limit nearly reached" },
+          { id: "sources", label: "SOURCES" },
+        ]}
+        active={popoverTab}
+        onChange={(id) => setPopoverTab(id as PopoverTab)}
+      />
+      <div className="bevel">
+        {/* Title bar: brand, a dithered drag region, and the range selector. */}
+        <div className="flex items-center gap-[10px] bg-amber px-[10px] py-[8px] text-rail shadow-[inset_0_4px_0_0_rgba(255,255,255,0.35),inset_0_-4px_0_0_rgba(0,0,0,0.3)]">
+          <span className="font-silkscreen text-[11px] tracking-[0.06em]">LLMTAB</span>
+          <span
+            className="h-[9px] flex-1 self-center opacity-30 [background-image:linear-gradient(45deg,currentColor_25%,transparent_25%,transparent_75%,currentColor_75%),linear-gradient(45deg,currentColor_25%,transparent_25%,transparent_75%,currentColor_75%)] [background-position:0_0,2px_2px] [background-size:4px_4px]"
+            aria-hidden="true"
+          />
+          <PeriodToggle period={period} onChange={setPeriod} />
         </div>
-      ) : (
-        <>
-          <div className="px-4 pt-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-[30px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
-                  {s ? compact(total) : "—"}
+        {err ? (
+          <div className="p-5 text-center">
+            <p className="text-sm font-medium text-alert">{err}</p>
+            <button
+              onClick={() => {
+                summary.reload();
+                daily.reload();
+                tools.reload();
+                models.reload();
+              }}
+              className="mt-3 px-4 py-1.5 bg-panel text-bone font-silkscreen text-[9px] tracking-[0.06em] shadow-[inset_0_3px_0_0_var(--lit),inset_3px_0_0_0_var(--lit),inset_0_-3px_0_0_var(--shade),inset_-3px_0_0_0_var(--shade)]"
+            >
+              RETRY
+            </button>
+          </div>
+        ) : (
+          <>
+            {popoverTab === "usage" && (
+              <div className="p-[13px]">
+                <span className="font-silkscreen text-[8px] tracking-[0.1em] text-muted">
+                  &gt; TOKENS · {CAPTION[period].toUpperCase()}
+                </span>
+
+                {/* The readout. Amber because every token here is spend. */}
+                <div className="mt-1 truncate font-vt323 text-[52px] leading-[0.9] text-amber tabular-nums">
+                  {s ? total.toLocaleString() : "—"}
                 </div>
-                <div className="mt-0.5 text-[13px] font-semibold leading-none text-slate-800 dark:text-slate-200">tokens</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-400">
-                    {CAPTION[period]}
+
+                <div className="mt-2 flex flex-wrap items-center gap-[9px]">
+                  <span className="font-vt323 text-[22px] leading-none text-amber tabular-nums">
+                    {cost(s?.costUsd ?? 0)}
+                    <span className="ml-[6px] font-silkscreen text-[8px] tracking-[0.1em] text-muted">EST</span>
                   </span>
                   {trend !== null && <TrendBadge pct={trend} />}
                 </div>
-              </div>
-              <PeriodToggle period={period} onChange={setPeriod} />
-            </div>
-          </div>
 
-          <div className="mt-1 h-10">
-            <HeroChart days={daily.data?.days ?? []} dark={dark} />
-          </div>
+                {/* Metered vs off-grid — the split that is the whole product thesis. */}
+                <div className="mt-3 grid grid-cols-2 gap-[10px]">
+                  <div className="bevel-in p-[10px_11px]">
+                    <span className="flex items-center gap-[7px] font-silkscreen text-[8px] tracking-[0.06em] text-bone">
+                      <i className="block h-2 w-2 shrink-0 bg-amber" aria-hidden="true" /> METERED
+                    </span>
+                    <div className="mt-[5px] truncate font-vt323 text-[30px] leading-none text-amber tabular-nums">
+                      {tools.loading && !tools.data ? "—" : compact(cloudTokens)}
+                    </div>
+                    <div className="mt-[5px] font-silkscreen text-[8px] tracking-[0.1em] text-muted">
+                      {cost(cloudCost)} EST
+                    </div>
+                  </div>
+                  <div className="bevel-in p-[10px_11px]">
+                    <span className="flex items-center gap-[7px] font-silkscreen text-[8px] tracking-[0.06em] text-bone">
+                      <i className="block h-2 w-2 shrink-0 bg-cyan" aria-hidden="true" /> OFF-GRID
+                    </span>
+                    <div className="mt-[5px] truncate font-vt323 text-[30px] leading-none text-cyan tabular-nums">
+                      {tools.loading && !tools.data ? "—" : compact(localTokens)}
+                    </div>
+                    <div className="mt-[5px] font-silkscreen text-[8px] tracking-[0.1em] text-muted">
+                      {percent(localTokens, total)} · FREE
+                    </div>
+                  </div>
+                </div>
 
-          <div className="border-t border-white/40 px-3 py-2.5 dark:border-white/10">
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="rounded-2xl border border-white/40 bg-white/30 p-2.5 dark:border-white/10 dark:bg-white/[0.06]">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Local Est.</span>
-                  <IconCpu size={14} className="shrink-0 text-slate-500 dark:text-slate-400" />
-                </div>
-                <div className="mt-1.5 truncate text-[18px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
-                  {tools.loading && !tools.data ? "—" : compact(localTokens)}
-                </div>
-                <div className="mt-1 text-[10px] leading-none text-slate-600 dark:text-slate-400">~{percent(localTokens, total)} of total</div>
-              </div>
-              <div className="rounded-2xl border border-white/40 bg-white/30 p-2.5 dark:border-white/10 dark:bg-white/[0.06]">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Cloud API</span>
-                  <IconCloud size={14} className="shrink-0 text-slate-500 dark:text-slate-400" />
-                </div>
-                <div className="mt-1.5 truncate text-[18px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
-                  {tools.loading && !tools.data ? "—" : compact(cloudTokens)}
-                </div>
-                <div className="mt-1 flex flex-col gap-0.5 text-[10px] leading-none text-slate-600 dark:text-slate-400">
-                  <span>{cost(cloudCost, { est: true })} est. cost</span>
-                  {cloudDelta !== null && <CostDelta pct={cloudDelta} />}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-2 rounded-2xl border border-white/40 bg-white/30 p-3 dark:border-white/10 dark:bg-white/[0.06]">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex rounded-full bg-white/30 p-0.5 dark:bg-white/10">
-                  {(["sources", "models"] as const).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setTab(t)}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                        tab === t
-                          ? "bg-white text-slate-900 shadow-sm dark:bg-white/20 dark:text-white"
-                          : "text-slate-700 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                      }`}
-                    >
-                      {t === "sources" ? "Top Sources" : "Top Models"}
-                    </button>
-                  ))}
-                </div>
-                {tab === "sources" ? (
-                  <IconTerminal size={14} className="shrink-0 text-slate-500 dark:text-slate-400" />
-                ) : (
-                  <IconBrain size={14} className="shrink-0 text-slate-500 dark:text-slate-400" />
+                {/* The one number that can ruin an afternoon, without leaving Usage. */}
+                {worst && (
+                  <div className="bevel-in mt-[10px] p-[10px_11px]">
+                    <div className="flex items-baseline justify-between gap-[10px]">
+                      <span className="font-silkscreen text-[8px] tracking-[0.1em] text-muted">CLOSEST LIMIT</span>
+                      <span
+                        className={`font-silkscreen text-[8px] tracking-[0.1em] ${
+                          worst.pct >= 90 ? "text-alert" : worst.pct >= 75 ? "text-amber" : "text-muted"
+                        }`}
+                      >
+                        {worst.provider.displayName.toUpperCase()}
+                        {resetLabel(worst.window.resetsAt, true)
+                          ? ` · ${resetLabel(worst.window.resetsAt, true).toUpperCase()}`
+                          : ""}
+                      </span>
+                    </div>
+                    <BlockMeter pct={worst.pct} />
+                    <div className="mt-[6px] flex items-baseline justify-between gap-[10px]">
+                      <span className="text-[10.5px] text-muted">{worst.window.label}</span>
+                      <b className="font-vt323 text-[15px] font-normal text-bone tabular-nums">
+                        {Math.round(worst.pct)}%
+                      </b>
+                    </div>
+                  </div>
                 )}
               </div>
+            )}
 
-              {tab === "sources" ? (
-                toolRows.length === 0 ? (
-                  <p className="py-3 text-center text-xs text-slate-600 dark:text-slate-400">
-                    {tools.loading ? "Loading…" : "No usage in this period yet."}
-                  </p>
-                ) : (
-                  <ul className="mt-1.5">
-                    {[...toolRows]
-                      .sort((a, b) => b.totalTokens - a.totalTokens)
-                      .slice(0, 3)
-                      .map((t, i) => (
-                        <TopSourceRow key={t.tool} tool={t} idx={i} total={total} />
-                      ))}
-                  </ul>
-                )
-              ) : (models.data?.models.length ?? 0) > 0 ? (
-                <ul className="mt-1.5 space-y-2">
-                  {[...models.data!.models]
-                    .sort((a, b) => b.totalTokens - a.totalTokens)
-                    .slice(0, 3)
-                    .map((m, i) => (
-                      <TopModelRow key={m.model} model={m} idx={i} total={total} />
+            {popoverTab === "quotas" && (
+              <div className="p-3">
+                <QuotaCard
+                  providers={quotas.data?.providers ?? []}
+                  loading={quotas.loading}
+                  error={quotas.error}
+                  onRetry={() => void refreshQuotas()}
+                  fetchedAt={quotas.data?.fetchedAt ?? null}
+                />
+              </div>
+            )}
+
+            {popoverTab === "sources" && (
+              <div className="p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex gap-1">
+                    {(["sources", "models"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setSourcesSubTab(t)}
+                        className={`px-2.5 py-1 font-silkscreen text-[9px] tracking-[0.06em] shadow-[inset_0_2px_0_0_var(--lit),inset_2px_0_0_0_var(--lit),inset_0_-2px_0_0_var(--shade),inset_-2px_0_0_0_var(--shade)] ${
+                          sourcesSubTab === t ? "bg-panel text-bone" : "bg-panel-2 text-muted hover:text-bone"
+                        }`}
+                      >
+                        {t === "sources" ? "TOP SOURCES" : "TOP MODELS"}
+                      </button>
                     ))}
-                </ul>
-              ) : (
-                <p className="py-3 text-center text-xs text-slate-600 dark:text-slate-400">
-                  {models.loading ? "Loading…" : "No models in this period yet."}
-                </p>
-              )}
-            </div>
-          </div>
+                  </div>
+                  {sourcesSubTab === "sources" ? (
+                    <IconTerminal size={12} className="shrink-0 text-muted" />
+                  ) : (
+                    <IconBrain size={12} className="shrink-0 text-muted" />
+                  )}
+                </div>
+                <div className="mt-2">
+                  {sourcesSubTab === "sources" ? (
+                    toolRows.length === 0 ? (
+                      <p className="py-3 text-center font-mono text-xs text-muted">
+                        {tools.loading ? "Loading…" : "No usage in this period yet."}
+                      </p>
+                    ) : (
+                      <ul>
+                        {[...toolRows]
+                          .sort((a, b) => b.totalTokens - a.totalTokens)
+                          .slice(0, 3)
+                          .map((t, i) => (
+                            <TopSourceRow key={t.tool} tool={t} idx={i} total={total} />
+                          ))}
+                      </ul>
+                    )
+                  ) : (models.data?.models.length ?? 0) > 0 ? (
+                    <ul className="space-y-2">
+                      {[...models.data!.models]
+                        .sort((a, b) => b.totalTokens - a.totalTokens)
+                        .slice(0, 3)
+                        .map((m, i) => (
+                          <TopModelRow key={m.model} model={m} idx={i} total={total} />
+                        ))}
+                    </ul>
+                  ) : (
+                    <p className="py-3 text-center font-mono text-xs text-muted">
+                      {models.loading ? "Loading…" : "No models in this period yet."}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
-            <div className="mt-2">
-              <QuotaCard providers={quotas.data?.providers ?? []} loading={quotas.loading} error={quotas.error} onRetry={() => quotas.reload()} />
-            </div>
-
-            <div className="border-t border-white/40 px-3 py-2.5 dark:border-white/10">
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-2 p-3 pt-0">
               <button
                 onClick={() => void syncNow()}
                 disabled={syncing}
-                className="flex items-center justify-center gap-2 rounded-full bg-white/60 py-2 text-[13px] font-semibold text-slate-900 transition hover:bg-white/85 disabled:cursor-wait disabled:opacity-60 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+                className="flex items-center justify-center gap-2 bg-amber text-rail px-3 py-[9px] font-silkscreen text-[9px] tracking-[0.06em] shadow-[inset_0_3px_0_0_var(--lit),inset_3px_0_0_0_var(--lit),inset_0_-3px_0_0_var(--shade),inset_-3px_0_0_0_var(--shade)] active:shadow-[inset_0_3px_0_0_var(--shade),inset_3px_0_0_0_var(--shade),inset_0_-3px_0_0_var(--lit),inset_-3px_0_0_0_var(--lit)] disabled:opacity-60"
               >
-                <IconRefresh size={14} className={syncing ? "animate-spin" : ""} />
-                {syncing ? "Syncing…" : "Sync Now"}
+                <IconRefresh size={12} className={syncing ? "animate-spin" : ""} />
+                {syncing ? "SYNCING…" : "SYNC NOW"}
               </button>
               <button
                 onClick={onOpenDashboard}
-                className="flex items-center justify-center gap-2 rounded-full bg-white/60 py-2 text-[13px] font-semibold text-slate-900 transition hover:bg-white/85 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+                className="flex items-center justify-center gap-2 bg-panel text-bone px-3 py-[9px] font-silkscreen text-[9px] tracking-[0.06em] shadow-[inset_0_3px_0_0_var(--lit),inset_3px_0_0_0_var(--lit),inset_0_-3px_0_0_var(--shade),inset_-3px_0_0_0_var(--shade)] active:shadow-[inset_0_3px_0_0_var(--shade),inset_3px_0_0_0_var(--shade),inset_0_-3px_0_0_var(--lit),inset_-3px_0_0_0_var(--lit)]"
               >
-                <IconGrid size={14} /> Dashboard
+                <IconGrid size={12} /> DASHBOARD
               </button>
             </div>
-            <div className="mt-2.5 flex items-center justify-between px-1">
+            <div className="flex items-center justify-between px-3 py-2 shadow-[inset_0_3px_0_0_var(--shade)]">
               <button
                 onClick={() => window.open(`${window.location.origin}/dashboard`, "_blank")}
-                className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700 transition hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                className="flex items-center gap-1.5 font-silkscreen text-[8px] tracking-[0.08em] text-muted hover:text-bone"
               >
-                <IconExternal size={13} /> Open Web App
+                <IconExternal size={10} /> OPEN WEB APP
               </button>
-              {IS_ELECTRON && (
+              {IS_ELECTRON ? (
                 <button
                   onClick={() => window.close()}
-                  className="text-[13px] font-medium text-slate-700 transition hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                  className="font-silkscreen text-[8px] tracking-[0.08em] text-muted hover:text-bone"
                 >
-                  Quit
+                  {typeof navigator !== "undefined" && navigator.userAgent.includes("Windows") ? "EXIT" : "QUIT"}
                 </button>
-              )}
+              ) : null}
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 function PeriodToggle({ period, onChange }: { period: Period; onChange: (p: Period) => void }): ReactNode {
   return (
-    <div className="flex shrink-0 rounded-full border border-white/50 bg-white/30 p-1 dark:border-white/10 dark:bg-white/10">
+    <div className="flex shrink-0" role="tablist" aria-label="Time range">
       {(["today", "7d", "30d"] as Period[]).map((p) => (
         <button
           key={p}
+          role="tab"
+          aria-selected={period === p}
           onClick={() => onChange(p)}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+          className={`mr-[3px] px-[7px] py-[3px] font-silkscreen text-[8px] tracking-[0.06em] last:mr-0 ${
             period === p
-              ? "bg-white text-slate-900 shadow-sm dark:bg-white/20 dark:text-white"
-              : "text-slate-700 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              ? "bg-amber text-rail shadow-[inset_0_3px_0_0_var(--shade),inset_3px_0_0_0_var(--shade),inset_0_-3px_0_0_rgba(255,255,255,0.3),inset_-3px_0_0_0_rgba(255,255,255,0.3)]"
+              : "bg-panel text-muted shadow-[inset_0_3px_0_0_var(--lit),inset_3px_0_0_0_var(--lit),inset_0_-3px_0_0_var(--shade),inset_-3px_0_0_0_var(--shade)] hover:text-bone"
           }`}
         >
-          {p === "today" ? "Today" : p}
+          {p.toUpperCase()}
         </button>
       ))}
     </div>
@@ -306,21 +386,6 @@ function TrendBadge({ pct }: { pct: number }): ReactNode {
       title="vs previous equal-length period"
     >
       {up ? <IconArrowUpRight size={11} /> : <IconArrowDownRight size={11} />}
-      {Math.abs(Math.round(pct))}%
-    </span>
-  );
-}
-
-function CostDelta({ pct }: { pct: number }): ReactNode {
-  const up = pct >= 0;
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold ${up ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}
-      title="cost vs previous equal-length period"
-    >
-      <svg width="7" height="7" viewBox="0 0 24 24" className={up ? "" : "rotate-180"} aria-hidden="true">
-        <path d="M12 5l8 14H4z" fill="currentColor" />
-      </svg>
       {Math.abs(Math.round(pct))}%
     </span>
   );
@@ -381,25 +446,6 @@ function TopModelRow({ model, idx, total }: { model: ModelRow; idx: number; tota
           : "$0"}
       </div>
     </li>
-  );
-}
-
-function HeroChart({ days, dark }: { days: DayRow[]; dark: boolean }): ReactNode {
-  const ordered = [...days].sort((a, b) => a.day.localeCompare(b.day)).map((d) => ({ tokens: d.totalTokens }));
-  const data = ordered.length === 0 ? [{ tokens: 0 }, { tokens: 0 }] : ordered.length === 1 ? [ordered[0]!, ordered[0]!] : ordered;
-  const stroke = dark ? "#e2e8f0" : "#1e293b";
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={stroke} stopOpacity={dark ? 0.22 : 0.16} />
-            <stop offset="100%" stopColor={stroke} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <Area type="monotone" dataKey="tokens" stroke={stroke} strokeWidth={2} fill="url(#heroFill)" isAnimationActive={false} />
-      </AreaChart>
-    </ResponsiveContainer>
   );
 }
 
@@ -559,31 +605,6 @@ function Icon({ size = 16, className, children }: IconProps & { children: ReactN
     >
       {children}
     </svg>
-  );
-}
-
-function IconCpu(p: IconProps): ReactNode {
-  return (
-    <Icon {...p}>
-      <rect x="4" y="4" width="16" height="16" rx="2" />
-      <rect x="9" y="9" width="6" height="6" />
-      <path d="M15 2v2" />
-      <path d="M15 20v2" />
-      <path d="M9 2v2" />
-      <path d="M9 20v2" />
-      <path d="M2 15h2" />
-      <path d="M2 9h2" />
-      <path d="M20 15h2" />
-      <path d="M20 9h2" />
-    </Icon>
-  );
-}
-
-function IconCloud(p: IconProps): ReactNode {
-  return (
-    <Icon {...p}>
-      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
-    </Icon>
   );
 }
 
