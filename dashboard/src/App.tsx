@@ -13,6 +13,7 @@ import { QuotaCard, DashboardQuotaSection } from "@/components/QuotaCard";
 import { TabStrip } from "@/components/pixel/TabStrip";
 import { BlockMeter } from "@/components/pixel/BlockMeter";
 import { resetLabel, worstWindow } from "@/quota";
+import { readPrefs, writePrefs } from "@/prefs";
 import claudecodeSvg from "@lobehub/icons-static-svg/icons/claudecode.svg?raw";
 import codexSvg from "@lobehub/icons-static-svg/icons/codex.svg?raw";
 import geminicliSvg from "@lobehub/icons-static-svg/icons/geminicli.svg?raw";
@@ -72,26 +73,25 @@ function deltaPct(cur: number | undefined, prev: number | undefined): number | n
 type PopoverTab = "usage" | "quotas" | "sources";
 
 function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): ReactNode {
-  const [period, setPeriod] = useState<Period>("7d");
   const [syncing, setSyncing] = useState(false);
-  const initialTab: PopoverTab = (() => {
+  // Restore the last view. A #hash still wins — a deep link should land where
+  // it points, not where you happened to be last time.
+  const saved = readPrefs();
+  const [period, setPeriod] = useState<Period>(saved.period);
+  const [popoverTab, setPopoverTab] = useState<PopoverTab>(() => {
     if (window.location.hash === "#models") return "sources";
     if (window.location.hash === "#quotas") return "quotas";
-    return "usage";
-  })();
-  const [popoverTab, setPopoverTab] = useState<PopoverTab>(initialTab);
+    return saved.tab;
+  });
   const [sourcesSubTab, setSourcesSubTab] = useState<"sources" | "models">(() =>
-    window.location.hash === "#models" ? "models" : "sources",
+    window.location.hash === "#models" ? "models" : saved.sourcesSubTab,
   );
-  // Range resets to 7d on open, selected tab resets to Usage — popover stays stateless
+
+  // Persist on change so the state survives a close. The popover window is
+  // reused rather than reloaded, so this is what makes the next open correct.
   useEffect(() => {
-    const onFocus = () => {
-      setPeriod("7d");
-      setPopoverTab("usage");
-    };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
+    writePrefs({ tab: popoverTab, period, sourcesSubTab });
+  }, [popoverTab, period, sourcesSubTab]);
   const range = RANGE_FOR[period];
   const key = rangeParam(range);
   const summary = useAsync(() => api.summary(range), [key]);
