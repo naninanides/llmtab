@@ -24,6 +24,8 @@ export interface QuotaProviderSnapshot {
   windows: QuotaWindow[];
   warning?: string | null;
   error?: string | null;
+  /** For status "rate-limited": how long the provider asked us to wait, in ms. */
+  retryAfterMs?: number | null;
   checkedAt: string;
 }
 
