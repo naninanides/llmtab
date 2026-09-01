@@ -182,9 +182,11 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
                   &gt; TOKENS · {CAPTION[period].toUpperCase()}
                 </span>
 
-                {/* The readout. Amber because every token here is spend. */}
-                <div className="mt-1 truncate font-vt323 text-[52px] leading-[0.9] text-amber tabular-nums">
-                  {s ? total.toLocaleString() : "—"}
+                {/* The readout. Amber because every token here is spend.
+                    Compact (StyleGuide §7) so it never truncates at 360px —
+                    the exact count follows below, where it has room. */}
+                <div className="mt-1 font-vt323 text-[52px] leading-[0.9] text-amber tabular-nums">
+                  {s ? compact(total) : "—"}
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-[9px]">
@@ -194,6 +196,12 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
                   </span>
                   {trend !== null && <TrendBadge pct={trend} />}
                 </div>
+
+                {s && total > 0 && (
+                  <div className="mt-[6px] font-mono text-[10.5px] text-muted tabular-nums">
+                    {total.toLocaleString("en-US")} tokens
+                  </div>
+                )}
 
                 {/* Metered vs off-grid — the split that is the whole product thesis. */}
                 <div className="mt-3 grid grid-cols-2 gap-[10px]">
