@@ -46,6 +46,14 @@ function windowFromUtil(label: string, obj: unknown, periodMs: number): QuotaWin
   };
 }
 
+/** "264" -> "~4m", "45" -> "~45s". Retry-after arrives as raw seconds. */
+export function retryLabel(retryAfter: string | null): string {
+  const secs = Number(retryAfter);
+  if (!Number.isFinite(secs) || secs <= 0) return "Rate limited — try again shortly.";
+  if (secs < 90) return `Rate limited — retry in ~${Math.ceil(secs)}s.`;
+  return `Rate limited — retry in ~${Math.ceil(secs / 60)}m.`;
+}
+
 const SESSION_MS = 5 * 60 * 60 * 1000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -91,8 +99,9 @@ export async function fetchClaudeQuota(oauth: ClaudeOAuth): Promise<QuotaProvide
         displayName: "Claude",
         status: "rate-limited",
         windows: [],
-        warning: retryAfter ? `Rate limited, retry in ~${retryAfter}s` : "Rate limited, try again later",
-        error: `Rate limited (429)${retryAfter ? ` retry-after ${retryAfter}` : ""}`,
+        // One message only: `warning` annotates a provider that returned data,
+        // `error` explains why one did not. A 429 is the latter.
+        error: retryLabel(retryAfter),
         checkedAt,
       };
     }
