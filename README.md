@@ -66,8 +66,8 @@ A detached shell writes its output to `~/.llmtab/desktop.log`.
 ### From source
 
 ```bash
-git clone https://github.com/naninanides/llmtab-v2.git
-cd llmtab-v2
+git clone https://github.com/naninanides/llmtab.git
+cd llmtab
 npm install
 npm run build
 npm run app                  # Electron tray shell against the local build
