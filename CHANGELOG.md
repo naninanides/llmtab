@@ -3,30 +3,16 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.0.6] — 2026-09-02
+## [Unreleased] — v2.1.0 work in progress
 
-### Changed
+### Added
 
-- **Dashboard and popover restyled to "Vitrine"** — macOS vibrancy replaces the Phosphor/CRT theme across both shells
-  - Three glass material tiers (`.glass-thin` / `.glass` / `.glass-thick` / `.glass-hud`) standing in for `NSVisualEffectView`, each with a specular top hairline and a shadow bottom hairline
-  - Backdrop is generated from the user's own usage — the heatmap year and recent daily totals, defocused — so the wallpaper can never contradict the data
-  - Type moves to Inter + JetBrains Mono via system stacks; the `public/fonts` WOFF2 files were all 0-byte placeholders, so no `@font-face` is declared and the popover still renders with no network
-  - New `components/glass/` primitives (Panel, Meter, Button, Segmented, DataDesktop) replace `components/pixel/` (Bevel, BlockMeter, PixelButton, TabStrip)
-  - Quota meters are one continuous track instead of lit blocks; thresholds still come from `barColor()`/`toneFor()` in `quota.ts`
-  - Segmented controls animate the selected pill between tabs (transform-only, 260ms, disabled under reduced motion)
-  - Popover narrows to 300px wide; StyleGuide Part I rewritten to match, Part II (code style) unchanged
-  - Reduce Transparency and missing `backdrop-filter` both fall back to an opaque surface — nothing depends on blur to stay legible
+- **`llmtab update`** — self-update from npm. Compares the running version against the registry and upgrades in place through whichever manager installed it (npm, pnpm, yarn, bun), bringing `llmtab-desktop` along when it is installed too. `--check` reports without installing; `-y` skips the prompt. Refuses to overwrite a local checkout or an `npx` run, and prints the command rather than guessing when the install layout is unrecognised.
 
 ### Fixed
 
-- **`/api/summary` was seconds slow and got worse with wider ranges** — 3.9s at 30d, 5.1s for all-time, which made switching range in the popover feel stalled
-  - `getUnpricedModels` used two correlated `EXISTS` subqueries that re-scanned the whole table once per candidate row (`EXPLAIN QUERY PLAN` showed a bare `SCAN` running 6,234 times). The same per-model facts are now grouped once and joined
-  - today 0.39s → 0.02s · 7d 1.87s → 0.01s · 30d 3.87s → 0.01s · all 5.13s → 0.01s; output verified byte-identical at 1d/7d/30d/3650d
-  - Added `idx_records_model` for per-model rollups (applied automatically via `CREATE INDEX IF NOT EXISTS`)
-- Electron popover auto-fit measured `.bevel`, a primitive removed in the retheme, so the window could not size to its content; it now measures the glass panel
-- Electron window forced a 360px width on every content resize, and its pre-paint fallback colours were still Phosphor
-
-## [Unreleased] — v2.1.0 work in progress
+- **`llmtab --version` reported `2.0.0` regardless of the installed version** — the number was hardcoded in the CLI. It now reads the package manifest.
+- OpenCode ingestion stored zero tokens for turns caught mid-stream; see 2.0.6 notes for the race, now covered by regression tests.
 
 ### Added
 
@@ -59,6 +45,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `--foreground` (`-F`) keeps the old attached behavior for debugging. Every
   other argument is still forwarded to Electron verbatim, and anything after
   `--` belongs to the app.
+
+## [2.0.6] — 2026-09-02
+
+### Changed
+
+- **Dashboard and popover restyled to "Vitrine"** — macOS vibrancy replaces the Phosphor/CRT theme across both shells
+  - Three glass material tiers (`.glass-thin` / `.glass` / `.glass-thick` / `.glass-hud`) standing in for `NSVisualEffectView`, each with a specular top hairline and a shadow bottom hairline
+  - Backdrop is generated from the user's own usage — the heatmap year and recent daily totals, defocused — so the wallpaper can never contradict the data
+  - Type moves to Inter + JetBrains Mono via system stacks; the `public/fonts` WOFF2 files were all 0-byte placeholders, so no `@font-face` is declared and the popover still renders with no network
+  - New `components/glass/` primitives (Panel, Meter, Button, Segmented, DataDesktop) replace `components/pixel/` (Bevel, BlockMeter, PixelButton, TabStrip)
+  - Quota meters are one continuous track instead of lit blocks; thresholds still come from `barColor()`/`toneFor()` in `quota.ts`
+  - Segmented controls animate the selected pill between tabs (transform-only, 260ms, disabled under reduced motion)
+  - Popover narrows to 300px wide; StyleGuide Part I rewritten to match, Part II (code style) unchanged
+  - Reduce Transparency and missing `backdrop-filter` both fall back to an opaque surface — nothing depends on blur to stay legible
+
+### Fixed
+
+- **`/api/summary` was seconds slow and got worse with wider ranges** — 3.9s at 30d, 5.1s for all-time, which made switching range in the popover feel stalled
+  - `getUnpricedModels` used two correlated `EXISTS` subqueries that re-scanned the whole table once per candidate row (`EXPLAIN QUERY PLAN` showed a bare `SCAN` running 6,234 times). The same per-model facts are now grouped once and joined
+  - today 0.39s → 0.02s · 7d 1.87s → 0.01s · 30d 3.87s → 0.01s · all 5.13s → 0.01s; output verified byte-identical at 1d/7d/30d/3650d
+  - Added `idx_records_model` for per-model rollups (applied automatically via `CREATE INDEX IF NOT EXISTS`)
+- Electron popover auto-fit measured `.bevel`, a primitive removed in the retheme, so the window could not size to its content; it now measures the glass panel
+- Electron window forced a 360px width on every content resize, and its pre-paint fallback colours were still Phosphor
 
 ## [2.0.1] — 2026-08-27
 

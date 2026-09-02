@@ -13,10 +13,21 @@ import { refreshPricing, applyPricing, pricingCacheAgeMs } from "../cost/litellm
 import { readConfig, proxyPort, ollamaUpstreamPort, writeConfig } from "../shared/config.js";
 import { runDoctor } from "./doctor.js";
 import { confirmUninstall, uninstall } from "./uninstall.js";
+import {
+  applyUpdate,
+  buildPlan,
+  confirmUpdate,
+  currentVersion,
+  desktopInstalled,
+  installCommand,
+} from "./update.js";
 
 const program = new Command();
 
-program.name("llmtab").description("Local-first LLM token usage & cost tracker.").version("2.0.0");
+program
+  .name("llmtab")
+  .description("Local-first LLM token usage & cost tracker.")
+  .version(currentVersion());
 
 function openBrowser(url: string): void {
   const cmd =
@@ -94,6 +105,74 @@ program
       console.log(`${c.ok ? "✓" : "✗"} ${c.name.padEnd(18)} ${c.detail}`);
     }
     if (!healthy) process.exitCode = 1;
+  });
+
+program
+  .command("update")
+  .description("Update LLMTab to the latest version published on npm")
+  .option("--check", "report whether an update exists without installing it")
+  .option("-y, --yes", "install without confirming")
+  .action(async (opts: { check?: boolean; yes?: boolean }) => {
+    const plan = await buildPlan();
+    console.log(`current  ${plan.current}`);
+
+    if (plan.latest === null) {
+      console.log("latest   unavailable — could not reach the npm registry.");
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`latest   ${plan.latest}`);
+
+    if (!plan.outdated) {
+      console.log("\nAlready up to date.");
+      return;
+    }
+
+    const packages = desktopInstalled() ? ["llmtab", "llmtab-desktop"] : ["llmtab"];
+
+    // A local checkout or an npx run must not be replaced by a registry copy.
+    if (plan.blocked !== null) {
+      console.log(`\n${plan.blocked}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    if (opts.check === true) {
+      const manager = plan.manager ?? "npm";
+      console.log(`\nAn update is available. Run:\n  ${installCommand(manager, packages[0]!)}`);
+      return;
+    }
+
+    // Without a detected manager, installing could add a second copy that never
+    // shadows the first — print the command and let the user pick.
+    if (plan.manager === null) {
+      console.log(
+        `\nCould not tell which package manager installed LLMTab (${plan.installDir || "unknown path"}).`,
+      );
+      console.log(
+        `Update it with the manager you used, e.g.\n  ${installCommand("npm", packages[0]!)}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    if (opts.yes !== true) {
+      const ok = await confirmUpdate(plan.current, plan.latest, packages);
+      if (!ok) {
+        console.log("Aborted.");
+        return;
+      }
+    }
+
+    console.log(`\nUpdating ${packages.join(" and ")} to ${plan.latest}…`);
+    const res = await applyUpdate(plan.manager, packages);
+    if (!res.ok) {
+      console.log(res.output || "(no output)");
+      console.log(`\nUpdate failed. Run it yourself with:\n  ${res.command}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Updated to ${plan.latest}. Restart the menu-bar app to pick it up.`);
   });
 
 program

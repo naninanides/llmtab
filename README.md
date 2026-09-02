@@ -160,18 +160,25 @@ instead of implying a proportion. Bars turn amber at 75% and red at 90%.
 
 ## CLI commands
 
-| Command                       | What it does                                                             |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| `llmtab-desktop`              | launch the menu-bar shell, detached from the terminal                    |
-| `llmtab-desktop --foreground` | same, but attached — startup errors land in your terminal (`-F`)         |
-| `llmtab`                      | sync → menu-bar app when the shell is installed, else serve + browser    |
-| `llmtab sync`                 | manual incremental scan (`--verbose`, `--rebuild`)                       |
-| `llmtab watch`                | keep the DB fresh via filesystem watchers                                |
-| `llmtab serve`                | serve the dashboard without opening a browser (`-p <port>`)              |
-| `llmtab proxy`                | run the Ollama capture proxy (`--off` to disable)                        |
-| `llmtab status`               | per-tool integration state                                               |
-| `llmtab doctor`               | health check: node, DB writability, sources, pricing cache, proxy wiring |
-| `llmtab uninstall`            | remove all LLMTab state (`~/.llmtab`)                                    |
+| Command                       | What it does                                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| `llmtab-desktop`              | launch the menu-bar shell, detached from the terminal                              |
+| `llmtab-desktop --foreground` | same, but attached — startup errors land in your terminal (`-F`)                   |
+| `llmtab`                      | sync → menu-bar app when the shell is installed, else serve + browser              |
+| `llmtab sync`                 | manual incremental scan (`--verbose`, `--rebuild`)                                 |
+| `llmtab watch`                | keep the DB fresh via filesystem watchers                                          |
+| `llmtab serve`                | serve the dashboard without opening a browser (`-p <port>`)                        |
+| `llmtab proxy`                | run the Ollama capture proxy (`--off` to disable)                                  |
+| `llmtab status`               | per-tool integration state                                                         |
+| `llmtab doctor`               | health check: node, DB writability, sources, pricing cache, proxy wiring           |
+| `llmtab update`               | update to the latest npm release (`--check` to look only, `-y` to skip the prompt) |
+| `llmtab uninstall`            | remove all LLMTab state (`~/.llmtab`)                                              |
+
+`llmtab update` compares your version against the npm registry and upgrades in
+place, using whichever manager installed it (npm, pnpm, yarn or bun) — and
+`llmtab-desktop` alongside it when that is installed too, since the two are
+released together. It refuses to touch a local checkout or an `npx` run, and
+prints the command instead of guessing when the install layout is unfamiliar.
 
 Environment flags: `LLMTAB_OFFLINE=1` disables the daily pricing fetch entirely.
 
