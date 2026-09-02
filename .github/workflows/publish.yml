@@ -1,0 +1,110 @@
+name: Publish to npm
+
+# Tag-driven: `git tag v2.0.5 && git push --tags`.
+# workflow_dispatch is there for a re-run after a half-finished publish —
+# llmtab can succeed and llmtab-desktop still fail, and the job is written so
+# re-running it skips whatever already landed.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and validate without publishing"
+        type: boolean
+        default: false
+
+# Never let two publishes race; a half-published pair is worse than a delay.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm # gate this in repo settings if you want manual approval
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # The published artefact is the one that was verified, not a later build.
+      - name: Verify
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+
+      # A tag that disagrees with package.json publishes a version nobody
+      # expects, so stop before the registry sees it.
+      - name: Check the tag matches package.json
+        if: github.event_name == 'push'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          root="$(node -p "require('./package.json').version")"
+          desktop="$(node -p "require('./packages/desktop/package.json').version")"
+          echo "tag=$tag  llmtab=$root  llmtab-desktop=$desktop"
+          if [ "$tag" != "$root" ]; then
+            echo "::error::Tag v$tag does not match llmtab@$root"
+            exit 1
+          fi
+          if [ "$tag" != "$desktop" ]; then
+            echo "::error::Tag v$tag does not match llmtab-desktop@$desktop"
+            exit 1
+          fi
+
+      # llmtab-desktop depends on llmtab, so a desktop release that pins a
+      # version the registry does not have is broken on arrival.
+      - name: Check the desktop dependency range
+        run: |
+          root="$(node -p "require('./package.json').version")"
+          range="$(node -p "require('./packages/desktop/package.json').dependencies.llmtab")"
+          if ! npx --yes semver --range "$range" "$root" >/dev/null 2>&1; then
+            echo "::error::llmtab-desktop depends on llmtab@$range, which excludes the $root being published"
+            exit 1
+          fi
+
+      # Prints the exact file list each tarball would ship — the cheapest way
+      # to catch a `files` entry that stopped matching reality.
+      - name: Dry run
+        if: inputs.dry_run
+        run: |
+          npm pack --dry-run
+          ( cd packages/desktop && npm pack --dry-run )
+
+      # Publish llmtab first: llmtab-desktop resolves it at install time.
+      - name: Publish llmtab
+        if: '!inputs.dry_run'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "llmtab@$version" version >/dev/null 2>&1; then
+            echo "llmtab@$version is already published — skipping."
+          else
+            npm publish --provenance --access public
+          fi
+
+      - name: Publish llmtab-desktop
+        if: '!inputs.dry_run'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: packages/desktop
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "llmtab-desktop@$version" version >/dev/null 2>&1; then
+            echo "llmtab-desktop@$version is already published — skipping."
+          else
+            npm publish --provenance --access public
+          fi
