@@ -27,7 +27,7 @@ export function Heatmap({ days }: { days: HeatDay[] }): ReactNode {
   if (week.some((c) => c.day !== "")) weeks.push(week);
 
   return (
-    <section className="rounded-card border border-border bg-surface p-4">
+    <section className="glass rounded-panel p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Activity</h2>
         <div className="flex items-center gap-1 text-xs text-text-2" aria-label="Color scale: less to more">

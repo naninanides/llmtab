@@ -21,7 +21,7 @@ export function TrendChart({ days }: { days: DayRow[] }): ReactNode {
   const ordered = [...days].sort((a, b) => a.day.localeCompare(b.day));
 
   return (
-    <section className="rounded-card border border-border bg-surface p-4">
+    <section className="glass rounded-panel p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Usage trend</h2>
         <div className="flex flex-wrap gap-1.5">
@@ -53,8 +53,8 @@ export function TrendChart({ days }: { days: DayRow[] }): ReactNode {
       <div className="mt-3 h-72">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={ordered} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-            <XAxis dataKey="day" tickFormatter={shortDayLabel} tick={{ fontSize: 11 }} stroke="#8b949e" />
-            <YAxis tickFormatter={(v: number) => compact(v)} tick={{ fontSize: 11 }} stroke="#8b949e" width={44} />
+            <XAxis dataKey="day" tickFormatter={shortDayLabel} tick={{ fontSize: 11 }} stroke="var(--text-3)" />
+            <YAxis tickFormatter={(v: number) => compact(v)} tick={{ fontSize: 11 }} stroke="var(--text-3)" width={44} />
             <Tooltip
               formatter={(value, name) => [compact(Number(value)), labelFor(String(name))] as [string, string]}
               labelFormatter={(l) => shortDayLabel(String(l))}

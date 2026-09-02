@@ -16,7 +16,7 @@ export function RangeTabs(): ReactNode {
     <div
       role="tablist"
       aria-label="Time range"
-      className="flex items-center gap-1 rounded-full border border-border bg-surface p-1"
+      className="glass-thin inline-flex items-center gap-1 rounded-full p-1"
     >
       {options.map((o) => (
         <button
@@ -25,7 +25,9 @@ export function RangeTabs(): ReactNode {
           aria-selected={range.kind === o.kind}
           onClick={() => setRange({ kind: o.kind })}
           className={`rounded-full px-4 min-h-[40px] text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-            range.kind === o.kind ? "bg-surface-2 text-accent" : "text-text-2 hover:text-text-1"
+            range.kind === o.kind
+              ? "bg-mat-thick text-text-1 shadow-[0_1px_0_var(--edge-hi)_inset,0_2px_6px_-3px_rgba(0,0,0,.5)]"
+              : "text-text-2 hover:text-text-1"
           }`}
         >
           {o.label}
@@ -84,7 +86,7 @@ interface StatCardProps {
 /** Stat card with delta chip vs previous equal range (FR-21). */
 export function StatCard({ label, value, deltaPct }: StatCardProps): ReactNode {
   return (
-    <div className="rounded-card border border-border bg-surface p-4">
+    <div className="glass rounded-panel p-4">
       <div className="text-xs font-medium uppercase tracking-wide text-text-2">{label}</div>
       <div className="mt-1 flex items-baseline gap-2">
         <span className="text-xl font-semibold tabular-nums">{value}</span>
@@ -119,7 +121,7 @@ export function HeroCard({
   localModels?: string[];
 }): ReactNode {
   return (
-    <div className="rounded-card border border-border bg-surface p-4">
+    <div className="glass rounded-panel p-4">
       <div className="text-xs font-medium uppercase tracking-wide text-text-2">Total tokens</div>
       <div className="mt-1 text-4xl font-bold leading-tight tabular-nums">
         {compact(totalTokens)}
@@ -159,7 +161,7 @@ export function ModelCards({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {models.slice(0, 6).map((m) => (
-        <div key={m.model} className="rounded-card border border-border bg-surface p-4">
+        <div key={m.model} className="glass rounded-panel p-4">
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate font-semibold" title={m.model}>
               {m.model}

@@ -308,7 +308,7 @@ function createPopoverWindow(): void {
   const isMac = process.platform === "darwin";
   const icon = appIcon();
   const winOpts: Electron.BrowserWindowConstructorOptions = {
-    width: 360,
+    width: 300,
     height: 420,
     show: false, // hidden sampai tray diklik
     frame: false, // REQUIRED: tidak ada frame agar seperti popover
@@ -321,7 +321,7 @@ function createPopoverWindow(): void {
     ...(icon ? { icon } : {}),
     hasShadow: true,
     transparent: false,
-    backgroundColor: isMac ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#141019" : "#DED4BE",
+    backgroundColor: isMac ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#070A0F" : "#DFE6EE",
     thickFrame: false,
     movable: false,
     alwaysOnTop: true,
@@ -351,10 +351,10 @@ function createPopoverWindow(): void {
 
   const MEASURE = `(() => {
     const root = document.getElementById('root');
-    const bevel = document.querySelector('.bevel');
+    const panel = document.querySelector('.glass-hud, .glass');
     const rh = root ? root.scrollHeight : 0;
-    const bh = bevel ? bevel.getBoundingClientRect().height + 16 : 0;
-    return Math.min(640, Math.max(240, Math.max(rh, bh, document.body.scrollHeight)));
+    const ph = panel ? panel.getBoundingClientRect().height + 16 : 0;
+    return Math.min(640, Math.max(240, Math.max(rh, ph, document.body.scrollHeight)));
   })()`;
 
   // Reports height the moment content changes. Title-cased channel so it cannot
@@ -379,7 +379,7 @@ function createPopoverWindow(): void {
     const [, curH] = win.getSize() as [number, number];
     // 4px deadband: ignore sub-pixel churn, act on real layout changes.
     if (curH !== undefined && Math.abs(curH - target) > 4) {
-      win.setSize(360, Math.round(target), false);
+      win.setSize(300, Math.round(target), false);
       positionWindow();
     }
   };

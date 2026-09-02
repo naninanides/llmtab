@@ -22,6 +22,9 @@ const MIGRATIONS: string[] = [
     recorded_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_records_occurred ON usage_records(occurred_at);
+  -- Per-model rollups (unpriced/local badges, model breakdown) group and filter
+  -- by model; without this they fall back to a full scan.
+  CREATE INDEX IF NOT EXISTS idx_records_model ON usage_records(model);
 
   CREATE TABLE IF NOT EXISTS usage_buckets (
     bucket_start TEXT NOT NULL,
