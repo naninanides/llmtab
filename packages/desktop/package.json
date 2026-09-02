@@ -18,12 +18,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/naninanides/llmtab-v2.git",
+    "url": "git+https://github.com/naninanides/llmtab.git",
     "directory": "packages/desktop"
   },
-  "homepage": "https://github.com/naninanides/llmtab-v2#readme",
+  "homepage": "https://github.com/naninanides/llmtab#readme",
   "bugs": {
-    "url": "https://github.com/naninanides/llmtab-v2/issues"
+    "url": "https://github.com/naninanides/llmtab/issues"
   },
   "engines": {
     "node": ">=22"

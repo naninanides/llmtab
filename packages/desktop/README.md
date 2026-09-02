@@ -1,6 +1,6 @@
 # llmtab-desktop
 
-Menu-bar / tray app for [LLMTab](https://github.com/naninanides/llmtab-v2).
+Menu-bar / tray app for [LLMTab](https://github.com/naninanides/llmtab).
 
 This package is a thin launcher. All the application code lives in the
 [`llmtab`](https://www.npmjs.com/package/llmtab) package; `llmtab-desktop`

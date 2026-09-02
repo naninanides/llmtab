@@ -64,6 +64,22 @@ jobs:
             exit 1
           fi
 
+      # Provenance refuses to publish when repository.url disagrees with the
+      # repo it was built from, and GitHub's rename redirects hide the drift
+      # from git and gh. Catch it before the tarball is signed.
+      - name: Check repository.url matches this repo
+        run: |
+          expected="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          for pkg in package.json packages/desktop/package.json; do
+            url="$(node -p "require('./$pkg').repository.url")"
+            norm="${url#git+}"; norm="${norm%.git}"
+            if [ "$norm" != "$expected" ]; then
+              echo "::error::$pkg repository.url is $norm, expected $expected"
+              exit 1
+            fi
+          done
+          echo "repository.url matches $expected"
+
       # llmtab-desktop depends on llmtab, so a desktop release that pins a
       # version the registry does not have is broken on arrival.
       - name: Check the desktop dependency range
