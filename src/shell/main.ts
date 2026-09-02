@@ -4,6 +4,7 @@ import {
   Tray,
   BrowserWindow,
   nativeImage,
+  nativeTheme,
   shell,
   screen,
   type MenuItemConstructorOptions,
@@ -33,6 +34,7 @@ let win: BrowserWindow | null = null;
 let dashboardPort = 0;
 let refreshTimer: NodeJS.Timeout | null = null;
 let contextMenu: Menu | null = null;
+let lastWorst: { provider: string; displayName: string; pct: number; resetMs: number | null; label: string } | null = null;
 
 interface TodayTotals {
   tokens: number;
@@ -125,12 +127,50 @@ async function refreshTray(db: DatabaseSync): Promise<void> {
     if (!tray) return;
     const tokens = Number(totals?.t ?? 0);
     const cost = Number(totals?.c ?? 0);
-    tray.setToolTip(`LLMTab — today: ${compact(tokens)} tokens ($${cost.toFixed(2)} est.)`);
+    // Quota alert — respect 5-min cache via getQuotas()
+    try {
+      const { getQuotas } = await import("../quota/manager.js");
+      const { worstWindow } = await import("../shared/quotaAlert.js");
+      const quotas = await getQuotas();
+      const worst = worstWindow(quotas.providers);
+      if (worst && worst.pct >= 90) {
+        const resetMs = worst.window.resetsAt ? new Date(worst.window.resetsAt).getTime() - Date.now() : null;
+        lastWorst = {
+          provider: worst.provider.provider,
+          displayName: worst.provider.displayName,
+          pct: Math.round(worst.pct),
+          resetMs: resetMs && resetMs > 0 ? resetMs : null,
+          label: worst.window.label,
+        };
+      } else {
+        lastWorst = null;
+      }
+    } catch {
+      // quota fetch is best-effort
+    }
+    // Tooltip — on alert, Windows carries the sentence (no title API)
+    if (lastWorst) {
+      const short = lastWorst.resetMs !== null ? formatShortReset(lastWorst.resetMs) : "";
+      const tip = `LLMTab — ${lastWorst.displayName} ${lastWorst.pct}% used${short ? `, resets in ${short}` : ""}`;
+      tray.setToolTip(tip);
+    } else {
+      tray.setToolTip(`LLMTab — today: ${compact(tokens)} tokens ($${cost.toFixed(2)} est.)`);
+    }
     applyTrayTitle();
     rebuildMenu(tokens, cost, perTool);
   } catch {
     // totals are cosmetic — never crash the shell over them
   }
+}
+
+function formatShortReset(ms: number): string {
+  const m = Math.ceil(ms / 60000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  if (h < 24) return `${h}h${rm ? ` ${rm}m` : ""}`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
 }
 
 let lastToday: TodayTotals | null = null;
@@ -142,7 +182,9 @@ function rebuildMenu(
 ): void {
   if (tokens >= 0 && tray) {
     lastToday = { tokens, costUsd, perTool };
-    tray.setToolTip(`LLMTab — today: ${compact(tokens)} tokens ($${costUsd.toFixed(2)} est.)`);
+    if (!lastWorst) {
+      tray.setToolTip(`LLMTab — today: ${compact(tokens)} tokens ($${costUsd.toFixed(2)} est.)`);
+    }
     applyTrayTitle();
   }
   const today = lastToday;
@@ -167,60 +209,63 @@ function rebuildMenu(
       click: () => void shell.openExternal(`http://localhost:${dashboardPort}`),
     },
     { type: "separator" },
-    // OpenUsage-inspired: Icon Style sub-menu (Text vs Icon only)
+    ...(process.platform === "win32"
+      ? []
+      : [
+          {
+            label: "Menu Bar",
+            submenu: [
+              {
+                label: "Show metrics in menu bar",
+                type: "checkbox" as const,
+                checked: (mb.mode ?? "icon-only") !== "icon-only",
+                click: (item: { checked: boolean }) => {
+                  updateMenuBarConfig({ mode: item.checked ? "text" : "icon-only" });
+                  if (lastToday) applyTrayTitle();
+                },
+              },
+              {
+                label: "Show cost",
+                type: "checkbox" as const,
+                checked: mb.showCost !== false,
+                enabled: (mb.mode ?? "icon-only") !== "icon-only",
+                click: (item: { checked: boolean }) => {
+                  updateMenuBarConfig({ showCost: item.checked });
+                  if (lastToday) applyTrayTitle();
+                },
+              },
+              { type: "separator" as const },
+              {
+                label: "Compact (total · cost)",
+                type: "radio" as const,
+                checked: (mb.style ?? "compact") === "compact",
+                enabled: (mb.mode ?? "icon-only") !== "icon-only",
+                click: () => {
+                  updateMenuBarConfig({ style: "compact" });
+                  if (lastToday) applyTrayTitle();
+                },
+              },
+              {
+                label: "Per-tool breakdown",
+                type: "radio" as const,
+                checked: mb.style === "per-tool",
+                enabled: (mb.mode ?? "icon-only") !== "icon-only",
+                click: () => {
+                  updateMenuBarConfig({ style: "per-tool" });
+                  if (lastToday) applyTrayTitle();
+                },
+              },
+            ],
+          } as MenuItemConstructorOptions,
+        ]),
     {
-      label: "Menu Bar",
-      submenu: [
-        {
-          label: "Show metrics in menu bar",
-          type: "checkbox",
-          checked: mb.mode !== "icon-only",
-          click: (item) => {
-            updateMenuBarConfig({ mode: item.checked ? "text" : "icon-only" });
-            if (lastToday) applyTrayTitle();
-          },
-        },
-        {
-          label: "Show cost",
-          type: "checkbox",
-          checked: mb.showCost !== false,
-          enabled: mb.mode !== "icon-only",
-          click: (item) => {
-            updateMenuBarConfig({ showCost: item.checked });
-            if (lastToday) applyTrayTitle();
-          },
-        },
-        { type: "separator" },
-        {
-          label: "Compact (total · cost)",
-          type: "radio",
-          checked: (mb.style ?? "compact") === "compact",
-          enabled: mb.mode !== "icon-only",
-          click: () => {
-            updateMenuBarConfig({ style: "compact" });
-            if (lastToday) applyTrayTitle();
-          },
-        },
-        {
-          label: "Per-tool breakdown",
-          type: "radio",
-          checked: mb.style === "per-tool",
-          enabled: mb.mode !== "icon-only",
-          click: () => {
-            updateMenuBarConfig({ style: "per-tool" });
-            if (lastToday) applyTrayTitle();
-          },
-        },
-      ],
-    },
-    {
-      label: "Launch at Login",
+      label: process.platform === "win32" ? "Start with Windows" : "Launch at Login",
       type: "checkbox",
       checked: app.getLoginItemSettings().openAtLogin,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
     { type: "separator" },
-    { label: "Quit LLMTab", role: "quit" },
+    { label: process.platform === "win32" ? "Exit" : "Quit LLMTab", role: "quit" },
   ];
   // Jangan pakai tray.setContextMenu — itu bikin left-click di macOS otomatis
   // menampilkan menu bersamaan dengan popover (2 layer). Simpan manual,
@@ -264,7 +309,7 @@ function createPopoverWindow(): void {
   const icon = appIcon();
   const winOpts: Electron.BrowserWindowConstructorOptions = {
     width: 360,
-    height: 640,
+    height: 420,
     show: false, // hidden sampai tray diklik
     frame: false, // REQUIRED: tidak ada frame agar seperti popover
     resizable: false, // REQUIRED
@@ -276,7 +321,7 @@ function createPopoverWindow(): void {
     ...(icon ? { icon } : {}),
     hasShadow: true,
     transparent: false,
-    backgroundColor: isMac ? "#00000000" : "#1a1a1a",
+    backgroundColor: isMac ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#141019" : "#DED4BE",
     thickFrame: false,
     movable: false,
     alwaysOnTop: true,
@@ -297,6 +342,78 @@ function createPopoverWindow(): void {
     win.setWindowButtonVisibility(false);
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
+  // Auto-fit height to content — eliminates empty space when USAGE tab is short
+  // (vs 640 fixed). Driven by a ResizeObserver in the renderer rather than a
+  // poll: a 300ms tick meant a tab switch resized the window up to 300ms after
+  // the content changed, which read as a lurch. The interval below is only a
+  // safety net for the rare change an observer misses.
+  let fitTimer: NodeJS.Timeout | null = null;
+
+  const MEASURE = `(() => {
+    const root = document.getElementById('root');
+    const bevel = document.querySelector('.bevel');
+    const rh = root ? root.scrollHeight : 0;
+    const bh = bevel ? bevel.getBoundingClientRect().height + 16 : 0;
+    return Math.min(640, Math.max(240, Math.max(rh, bh, document.body.scrollHeight)));
+  })()`;
+
+  // Reports height the moment content changes. Title-cased channel so it cannot
+  // collide with anything the app logs.
+  const OBSERVE = `(() => {
+    if (window.__llmtabFit) return true;
+    const emit = () => {
+      try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
+    };
+    const ro = new ResizeObserver(emit);
+    const root = document.getElementById('root');
+    if (root) ro.observe(root);
+    window.__llmtabFit = { ro };
+    emit();
+    return true;
+  })()`;
+
+  const applyHeight = (raw: unknown): void => {
+    if (!win || win.isDestroyed() || !win.isVisible()) return;
+    const target = Number(raw);
+    if (!Number.isFinite(target) || target <= 0) return;
+    const [, curH] = win.getSize() as [number, number];
+    // 4px deadband: ignore sub-pixel churn, act on real layout changes.
+    if (curH !== undefined && Math.abs(curH - target) > 4) {
+      win.setSize(360, Math.round(target), false);
+      positionWindow();
+    }
+  };
+
+  const fitPopoverHeight = async (): Promise<void> => {
+    if (!win || win.isDestroyed() || !win.isVisible()) return;
+    try {
+      applyHeight(await win.webContents.executeJavaScript(MEASURE, true));
+    } catch {}
+  };
+
+  // The observer speaks through console messages — no preload, no IPC surface.
+  // Electron 44 carries the details on the event object itself.
+  win.webContents.on("console-message", (details) => {
+    const message = details.message ?? "";
+    if (message.startsWith("LLMTAB_FIT:")) applyHeight(message.slice(11));
+  });
+
+  const startFit = (): void => {
+    if (fitTimer) clearInterval(fitTimer);
+    // Was 300ms; the observer carries the real work now.
+    fitTimer = setInterval(() => void fitPopoverHeight(), 2000);
+    fitTimer.unref?.();
+    void win?.webContents.executeJavaScript(OBSERVE, true).catch(() => {});
+    void fitPopoverHeight();
+  };
+  const stopFit = (): void => {
+    if (fitTimer) { clearInterval(fitTimer); fitTimer = null; }
+  };
+  win.on("show", () => startFit());
+  win.on("hide", () => stopFit());
+  win.webContents.on("did-finish-load", () => {
+    if (win?.isVisible()) startFit();
+  });
   // Blur otomatis hide — klik di luar popover menutup
   win.on("blur", () => {
     if (win?.isDestroyed() || !win?.isVisible()) return;
@@ -309,6 +426,7 @@ function createPopoverWindow(): void {
     );
   });
   win.on("closed", () => {
+    stopFit();
     win = null;
   });
   void win.loadURL(`http://localhost:${dashboardPort}`);
@@ -372,7 +490,67 @@ function updateMenuBarConfig(patch: MenuBarConfig): void {
 
 function applyTrayTitle(): void {
   if (!tray) return;
-  // Use the existing tray icon files (speedometer, no text)
+  const isMac = process.platform === "darwin";
+  const mb = readMenuBarConfig();
+  // Alert path takes precedence at 90%+
+  if (lastWorst) {
+    const short = lastWorst.resetMs !== null ? formatShortReset(lastWorst.resetMs) : "";
+    const alertLabel = short ? `${lastWorst.pct}% · ${short}` : `${lastWorst.pct}%`;
+    if (isMac) {
+      try {
+        tray.setTitle(alertLabel);
+      } catch {
+        // setTitle only on macOS
+      }
+      tray.setImage(trayIcon());
+    } else {
+      // Windows: colour tray icon (not template) + tooltip already set
+      tray.setImage(trayIcon(true));
+      try {
+        tray.setTitle("");
+      } catch {
+        // ignore
+      }
+    }
+    return;
+  }
+
+  // Normal path — respect Menu Bar config. Icon-only is the default: the menu
+  // bar stays quiet, and the numbers live in the tooltip, menu and popover.
+  // Opt into the pinned text with "Show metrics in menu bar".
+  if ((mb.mode ?? "icon-only") === "icon-only") {
+    try {
+      tray.setTitle("");
+    } catch {}
+    tray.setImage(trayIcon());
+    return;
+  }
+  // No data yet — icon only
+  if (!lastToday || lastToday.tokens <= 0) {
+    try {
+      tray.setTitle("");
+    } catch {}
+    tray.setImage(trayIcon());
+    return;
+  }
+
+  const showCost = mb.showCost !== false;
+  const style = mb.style ?? "compact";
+  let title = "";
+  if (style === "per-tool" && lastToday.perTool.length > 0) {
+    const pinned = lastToday.perTool.slice(0, 2);
+    title = pinned.map((t) => `${labelForTool(t.tool)} ${compact(t.totalTokens)}`).join(" · ");
+    if (showCost) title += ` · $${lastToday.costUsd.toFixed(2)}`;
+  } else {
+    title = `${compact(lastToday.tokens)}`;
+    if (showCost) title += ` · $${lastToday.costUsd.toFixed(2)}`;
+  }
+
+  if (isMac) {
+    try {
+      tray.setTitle(title);
+    } catch {}
+  }
   tray.setImage(trayIcon());
 }
 
@@ -413,20 +591,26 @@ function iconCandidates(...files: string[]): string[] {
   return files.map((f) => resolveIconPath(f)).filter((p): p is string => p !== null);
 }
 
-/** Monochrome template PNG so macOS tints it correctly in the menu bar. */
-function trayIcon(): Electron.NativeImage {
+/** Monochrome template PNG so macOS tints it correctly in the menu bar. Guarded to darwin — on Windows a template image is a flat black silhouette. */
+function trayIcon(alert = false): Electron.NativeImage {
   const p16 = resolveIconPath("tray-16.png");
   const p32 = resolveIconPath("tray-32.png");
-  if (p16) {
-    const icon = nativeImage.createFromPath(p16);
-    if (p32) icon.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(p32) });
-    icon.setTemplateImage(true);
+  // Windows alert could ship a colour asset (e.g. tray-alert-16.png); fall back to normal icon as colour image
+  const alertP16 = alert ? resolveIconPath("tray-alert-16.png") : null;
+  const alertP32 = alert ? resolveIconPath("tray-alert-32.png") : null;
+  const useP16 = alert && alertP16 ? alertP16 : p16;
+  const useP32 = alert && alertP32 ? alertP32 : p32;
+  if (useP16) {
+    const icon = nativeImage.createFromPath(useP16);
+    if (useP32) icon.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(useP32) });
+    else if (p32 && !alert) icon.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(p32) });
+    if (process.platform === "darwin") icon.setTemplateImage(true);
     return icon;
   }
   // fallback to embedded base64 (kept for packaged builds without icons)
   const icon = nativeImage.createFromDataURL(TEMPLATE_PNG_16);
   icon.addRepresentation({ scaleFactor: 2, dataURL: TEMPLATE_PNG_32 });
-  icon.setTemplateImage(true);
+  if (process.platform === "darwin") icon.setTemplateImage(true);
   return icon;
 }
 
