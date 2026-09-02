@@ -17,7 +17,7 @@ The tray app is `llmtab-desktop`. The engine behind it is also a standalone CLI 
 
 ## Install
 
-**Requirements:** Node.js ≥ 20. macOS is the tested platform.
+**Requirements:** Node.js ≥ 22 (the store uses the built-in `node:sqlite`). macOS is the tested platform.
 
 ```bash
 npm i -g llmtab-desktop

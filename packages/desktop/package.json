@@ -26,7 +26,7 @@
     "url": "https://github.com/naninanides/llmtab-v2/issues"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "llmtab-desktop": "./bin.mjs"
