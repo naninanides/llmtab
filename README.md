@@ -15,6 +15,10 @@ The tray app is `llmtab-desktop`. The engine behind it is also a standalone CLI 
 - Reads only token counts and metadata — **never** prompts or responses
 - One command → your usage in under 30 seconds
 
+![The LLMTab dashboard: total tokens and estimated cost, live provider quotas, daily usage bars, an activity heatmap, and a per-day breakdown table](docs/screenshots/dashboard-dark.png)
+
+<sub>Screenshots use sample data.</sub>
+
 ## Install
 
 **Requirements:** Node.js ≥ 22 (the store uses the built-in `node:sqlite`). macOS is the tested platform.
@@ -86,6 +90,12 @@ Publishing new versions is documented in [`docs/PUBLISHING.md`](docs/PUBLISHING.
 
 ## In the menu bar
 
+![The same panel in two shells: hanging from the macOS menu bar, and as a Windows system-tray window with a title bar](docs/screenshots/menubar-tray.png)
+
+One panel, two hosts — it follows each platform's conventions rather than
+pretending to be native. Three sections: **Usage**, **Quotas** and **Sources**.
+A dot on Quotas means a provider crossed 90%.
+
 LLMTab auto-detects your installed tools, runs an incremental sync, and starts a
 local server on port 7878 (with automatic fallback). The tray icon gives you:
 
@@ -136,7 +146,17 @@ One selection drives every view:
 - **Tool & project attribution** — find token-hungry repos
 - Dark/light theme, persisted; skeleton loaders; friendly empty states
 
+![The dashboard in its light theme, showing the same panels over a lighter backdrop](docs/screenshots/dashboard-light.png)
+
 Costs are estimates from the [LiteLLM community price list](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json), cached locally for 24h with a bundled offline fallback. Models without public prices show `$0` plus an "unpriced" badge rather than a wrong number; Ollama models show a "local" badge — free by design.
+
+### Live quotas
+
+<img src="docs/screenshots/popover-quotas.png" alt="The Quotas section listing Claude session and weekly windows, and a Codex 5-hour window at 94% with a warning that the cap is 38 minutes away" width="320">
+
+Read from each tool's own limit headers, cached for 5 minutes. Only windows that
+publish a limit draw a meter — a usage count with no ceiling prints the number
+instead of implying a proportion. Bars turn amber at 75% and red at 90%.
 
 ## CLI commands
 
