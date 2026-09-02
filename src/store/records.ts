@@ -2,21 +2,53 @@ import type { DatabaseSync } from "node:sqlite";
 import type { UsageRecord } from "../shared/types.js";
 
 /**
- * Idempotent insert: dedup_key is PRIMARY KEY → INSERT OR IGNORE.
- * Returns the number of newly added rows.
+ * Idempotent insert keyed on dedup_key (PRIMARY KEY).
+ *
+ * A stored row is normally left alone, so re-syncing the same source adds
+ * nothing. The one exception is a row whose counters are all zero: providers
+ * that stream a response can persist the record before the token counts land
+ * (OpenCode does), and a sync that reads it in that window used to freeze the
+ * zeros permanently. Such a row is overwritten as soon as a sync sees real
+ * counts for it, which also repairs rows an earlier version already zeroed.
+ *
+ * The guard is deliberately one-directional — real counts never downgrade to
+ * zero, and a row that already has counts is never rewritten — so this stays
+ * idempotent: syncing twice still reports zero additions the second time.
+ *
+ * Returns the number of newly added rows (repairs are not counted as adds).
  */
 export function insertRecords(db: DatabaseSync, records: UsageRecord[]): number {
   const stmt = db.prepare(
-    `INSERT OR IGNORE INTO usage_records (
+    `INSERT INTO usage_records (
        dedup_key, tool, model, input_tokens, output_tokens,
        cache_read_tokens, cache_write_tokens, reasoning_tokens,
        cost_usd, occurred_at, project, session_id, recorded_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(dedup_key) DO UPDATE SET
+       model = excluded.model,
+       input_tokens = excluded.input_tokens,
+       output_tokens = excluded.output_tokens,
+       cache_read_tokens = excluded.cache_read_tokens,
+       cache_write_tokens = excluded.cache_write_tokens,
+       reasoning_tokens = excluded.reasoning_tokens,
+       cost_usd = excluded.cost_usd,
+       recorded_at = excluded.recorded_at
+     WHERE usage_records.input_tokens = 0
+       AND usage_records.output_tokens = 0
+       AND usage_records.cache_read_tokens = 0
+       AND usage_records.cache_write_tokens = 0
+       AND usage_records.reasoning_tokens = 0
+       AND (excluded.input_tokens + excluded.output_tokens + excluded.cache_read_tokens
+            + excluded.cache_write_tokens + excluded.reasoning_tokens) > 0`,
   );
+  const exists = db.prepare("SELECT 1 FROM usage_records WHERE dedup_key = ?");
   let added = 0;
   const now = new Date().toISOString();
   for (const r of records) {
-    const res = stmt.run(
+    // `changes` cannot tell an insert from a repair, and callers count adds to
+    // report sync results, so ask before writing.
+    const seen = exists.get(r.dedupKey) !== undefined;
+    stmt.run(
       r.dedupKey,
       r.tool,
       r.model,
@@ -31,7 +63,7 @@ export function insertRecords(db: DatabaseSync, records: UsageRecord[]): number 
       r.sessionId,
       now,
     );
-    added += Number(res.changes);
+    if (!seen) added += 1;
   }
   return added;
 }

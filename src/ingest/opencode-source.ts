@@ -56,6 +56,12 @@ export function fetchOpencodeUsage(
       const parsed = parseMessageData(r.data);
       // user messages (and anything without tokens) are not usage rows
       if (!parsed || parsed.role !== "assistant" || !parsed.tokens) continue;
+      const tokens = normalizeTokens(parsed.tokens);
+      // OpenCode inserts the assistant row when the response starts and fills
+      // the counts in when it finishes, so a sync landing in that gap sees a
+      // real row with every counter at zero. Skipping it lets the next sync
+      // pick up the completed turn; ingesting it stored the zeros for good.
+      if (totalOf(tokens) === 0) continue;
       rows.push({
         id: r.id,
         session_id: r.session_id,
@@ -64,7 +70,7 @@ export function fetchOpencodeUsage(
         modelID: typeof parsed.modelID === "string" ? parsed.modelID : null,
         providerID: typeof parsed.providerID === "string" ? parsed.providerID : null,
         cwd: cwdOf(parsed),
-        tokens: normalizeTokens(parsed.tokens),
+        tokens,
         costUsd: typeof parsed.cost === "number" && Number.isFinite(parsed.cost) ? parsed.cost : 0,
       });
     }
@@ -127,4 +133,9 @@ function normalizeTokens(t: unknown): TokenShape {
 
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/** Every counter summed — zero means the turn has not been written yet. */
+function totalOf(t: TokenShape): number {
+  return t.input + t.output + t.reasoning + t.cacheRead + t.cacheWrite;
 }
