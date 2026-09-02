@@ -164,14 +164,30 @@ export function getHeatmap(
  * badge instead, never "unpriced" (PRD FR-17).
  */
 export function getUnpricedModels(db: DatabaseSync, w: Window): string[] {
+  // The two per-model tests ("has any non-ollama record", "has any priced
+  // record") ask about a model across all time, not within the window. Written
+  // as correlated EXISTS they re-scanned the whole table once per candidate
+  // row, which made /api/summary cost seconds and grow with the range. Grouping
+  // the same facts once and joining is equivalent and runs in a single pass.
   return (
     db
       .prepare(
-        `SELECT DISTINCT model FROM usage_records r
-         WHERE NOT EXISTS (SELECT 1 FROM pricing p WHERE p.model IN (r.model, lower(r.model)))
-           AND EXISTS (SELECT 1 FROM usage_records r2 WHERE r2.model = r.model AND r2.tool <> 'ollama')
-           AND NOT EXISTS (SELECT 1 FROM usage_records r3 WHERE r3.model = r.model AND r3.cost_usd > 0)
-           AND ${where(w).slice(5)}`,
+        `WITH win AS (
+           SELECT DISTINCT model FROM usage_records WHERE ${where(w).slice(5)}
+         ),
+         facts AS (
+           SELECT model,
+                  SUM(CASE WHEN tool <> 'ollama' THEN 1 ELSE 0 END) nonOllama,
+                  SUM(CASE WHEN cost_usd > 0 THEN 1 ELSE 0 END) priced
+           FROM usage_records
+           WHERE model IN (SELECT model FROM win)
+           GROUP BY model
+         )
+         SELECT w.model FROM win w
+         JOIN facts f ON f.model = w.model
+         WHERE f.nonOllama > 0
+           AND f.priced = 0
+           AND NOT EXISTS (SELECT 1 FROM pricing p WHERE p.model IN (w.model, lower(w.model)))`,
       )
       .all(...params(w)) as unknown as Array<{ model: string }>
   ).map((r) => r.model);

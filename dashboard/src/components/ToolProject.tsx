@@ -11,7 +11,7 @@ export function ToolBreakdown({
   // StyleGuide §2 chart series order (first 6 cover v1's six tools)
   const colors = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
   return (
-    <section className="rounded-card border border-border bg-surface p-4">
+    <section className="glass rounded-panel p-4">
       <h2 className="text-base font-semibold">By tool</h2>
       {tools.length === 0 ? (
         <p className="mt-2 text-sm text-text-2">No usage in range.</p>
@@ -62,7 +62,7 @@ export function ProjectList({
   const top = projects.filter((p) => p.project !== "(unknown)").slice(0, 8);
   const grand = projects.reduce((a, p) => a + p.totalTokens, 0);
   return (
-    <section className="rounded-card border border-border bg-surface p-4">
+    <section className="glass rounded-panel p-4">
       <h2 className="text-base font-semibold">Top projects</h2>
       {top.length === 0 ? (
         <p className="mt-2 text-sm text-text-2">No project usage in range.</p>

@@ -76,7 +76,7 @@ export function TotalSpendCard(): ReactNode {
   const sorted = tools ? [...tools].sort((a, b) => (metric === "cost" ? b.costUsd - a.costUsd : b.totalTokens - a.totalTokens)) : [];
 
   return (
-    <section className="rounded-card border border-border bg-surface p-4">
+    <section className="glass rounded-panel p-4">
       {/* Header: title + metric toggle (like OpenUsage Cost/CostMTok/Tokens pull-down) */}
       <div className="flex items-center gap-2">
         <h2 className="text-base font-semibold">Total Spend</h2>
@@ -105,7 +105,7 @@ export function TotalSpendCard(): ReactNode {
           aria-label="Metric"
           value={metric}
           onChange={(e) => setMetric(e.target.value as Metric)}
-          className="rounded-full border border-border bg-surface-2 px-2 py-1 text-xs font-medium text-text-1"
+          className="rounded-full glass-thin px-2 py-1 text-xs font-medium text-text-1"
         >
           <option value="cost">Cost</option>
           <option value="tokens">Tokens</option>
