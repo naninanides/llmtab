@@ -432,7 +432,7 @@ function createPopoverWindow(): void {
   // Version the guard: the popover window is reused across opens, so a stale
   // observer installed by an earlier build would otherwise block this one from
   // ever being set up.
-  const FIT_VERSION = 3;
+  const FIT_VERSION = 4;
 
   // Watches the tab body, not #root and not the panel. #root is pinned to the
   // window height by the popover layout so it never resizes, and the panel
@@ -442,11 +442,19 @@ function createPopoverWindow(): void {
   const OBSERVE = `(() => {
     const prev = window.__llmtabFit;
     if (prev && prev.v === ${FIT_VERSION}) return true;
+    // Release everything the previous install held. Earlier versions stored
+    // only { ro } or { ro, panel } and registered a document-level mousedown
+    // listener they never removed, so each reload left another observer and
+    // another listener attached — every tab switch then ran emit() once per
+    // leaked observer, and the popover grew progressively less responsive the
+    // longer the app stayed open. dispose() is now the single teardown path
+    // and is stored on the state so any future version can call it blindly.
     if (prev) {
+      try { prev.dispose && prev.dispose(); } catch {}
       try { prev.ro && prev.ro.disconnect(); } catch {}
       try { prev.mo && prev.mo.disconnect(); } catch {}
     }
-    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null, known: {}, last: 0 };
+    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null, known: {}, last: 0, dispose: null };
     window.__llmtabFit = state;
 
     /** Which tab is selected, used as the cache key. */
@@ -505,15 +513,21 @@ function createPopoverWindow(): void {
     // on a previous visit sends that height immediately, so the window is
     // already moving while React renders — the measurement afterwards only
     // corrects it if the content actually changed size.
-    document.addEventListener('mousedown', (e) => {
+    const onDown = (e) => {
       const tab = e.target && e.target.closest && e.target.closest('[role="tab"]');
       if (!tab) return;
       const label = (tab.textContent || '').trim();
       const h = state.known[label];
       if (typeof h === 'number') report(h);
-    }, true);
+    };
+    document.addEventListener('mousedown', onDown, true);
 
     state.mo = new MutationObserver(() => { watch(); emit(); });
+    state.dispose = () => {
+      try { document.removeEventListener('mousedown', onDown, true); } catch {}
+      try { state.ro && state.ro.disconnect(); } catch {}
+      try { state.mo && state.mo.disconnect(); } catch {}
+    };
     const root = document.getElementById('root');
     if (root) state.mo.observe(root, { childList: true, subtree: true });
     watch();
