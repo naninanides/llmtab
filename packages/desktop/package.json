@@ -1,6 +1,6 @@
 {
   "name": "llmtab-desktop",
-  "version": "2.1.1-beta.2",
+  "version": "2.1.1",
   "description": "Menu-bar / tray app for LLMTab — adds the Electron shell to the llmtab CLI.",
   "type": "module",
   "license": "MIT",
