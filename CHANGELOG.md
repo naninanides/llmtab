@@ -3,6 +3,30 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.1.1-beta.1] — 2026-09-03
+
+Prerelease. Published to the `beta` dist-tag, so `npm install -g llmtab` still
+installs the latest stable; use `llmtab@beta` to try this one.
+
+### Added
+
+- The running version is shown in both footers — centred in the popover, under the sync line in the browser dashboard. `/api/healthz` now returns it alongside `ok`.
+
+### Fixed
+
+- **Codex usage was recorded with no model name.** The parser never read the model, so every record stored `"unknown"` and the dashboard showed a nameless row carrying real tokens. Verified against Codex 0.153.0 logs: the model is on `turn_context.payload.model`, not `session_meta`, whose only model mention sits inside prompt text that must never be read. A model switch mid-session is now followed too.
+- **Gemini dedup dropped turns across incremental syncs.** The occurrence counter restarted each sync, re-keying turns already stored so they collided on insert. Identity is now the line's absolute byte offset.
+- **A row stored as `unknown` can now be renamed** by a later sync, one direction only, so data already captured by a broken parser is repaired rather than stuck.
+- **The popover could not shrink back** when leaving a taller tab: every height it measured was sized by its own window, making the measurement a fixed point. It now measures the content with the constraint lifted.
+- **Rapid tab switching stuttered** because each switch reported its height three times and every report resized the frame. Reports are de-duplicated and writes debounced, so only the tab settled on is drawn.
+- **The popover degraded the longer it ran** — the fit observers and a document listener were never released, so each reopen left another set attached.
+- Usage and Sources no longer inherit the Quotas height, and the quota list scrolls without dragging the tabs or footer with it.
+
+### Changed
+
+- Popover fit logic moved out of the main process into a typed, tested renderer module (StyleGuide §9); `src/shell/main.ts` drops ~130 lines of embedded JavaScript.
+- Prereleases publish to the `beta` dist-tag instead of `latest`.
+
 ## [2.1.0] — 2026-09-02
 
 ### Added

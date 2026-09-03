@@ -106,10 +106,19 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           version="$(node -p "require('./package.json').version")"
+          # A prerelease must not become the default install. `npm publish`
+          # writes the `latest` dist-tag unless told otherwise, so a version
+          # carrying a hyphen (2.1.1-beta.1) goes to `beta` instead and `latest`
+          # keeps pointing at the last stable release.
+          case "$version" in
+            *-*) npm_tag="beta" ;;
+            *)   npm_tag="latest" ;;
+          esac
+          echo "publishing llmtab@$version to dist-tag $npm_tag"
           if npm view "llmtab@$version" version >/dev/null 2>&1; then
             echo "llmtab@$version is already published — skipping."
           else
-            npm publish --provenance --access public
+            npm publish --provenance --access public --tag "$npm_tag"
           fi
 
       - name: Publish llmtab-desktop
@@ -119,8 +128,13 @@ jobs:
         working-directory: packages/desktop
         run: |
           version="$(node -p "require('./package.json').version")"
+          case "$version" in
+            *-*) npm_tag="beta" ;;
+            *)   npm_tag="latest" ;;
+          esac
+          echo "publishing llmtab-desktop@$version to dist-tag $npm_tag"
           if npm view "llmtab-desktop@$version" version >/dev/null 2>&1; then
             echo "llmtab-desktop@$version is already published — skipping."
           else
-            npm publish --provenance --access public
+            npm publish --provenance --access public --tag "$npm_tag"
           fi
