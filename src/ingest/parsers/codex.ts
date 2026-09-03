@@ -17,10 +17,23 @@ interface CodexLine {
     id?: unknown;
     request_id?: unknown;
     cwd?: unknown;
+    /** Model recorded on the session; key has varied across Codex versions. */
+    model?: unknown;
+    model_slug?: unknown;
+    modelId?: unknown;
     info?: {
       last_token_usage?: Record<string, unknown>;
+      model?: unknown;
     };
   };
+}
+
+/** First argument that is a non-empty string, else null. */
+function firstString(...values: unknown[]): string | null {
+  for (const v of values) {
+    if (typeof v === "string" && v.trim() !== "") return v;
+  }
+  return null;
 }
 
 function num(v: unknown): number {
@@ -61,12 +74,24 @@ export const codexParser: Parser = {
         // line-level type; payload carries id/cwd without its own type field
         if (typeof p.id === "string") sessionId = p.id;
         if (typeof p.cwd === "string" && !ctx.project) cwd = p.cwd;
+        // The model was previously never read, so every record was stored as
+        // "unknown" and the dashboard showed a nameless row. Codex has spelled
+        // this key differently across versions, so take whichever is present.
+        const named = firstString(p.model, p.model_slug, p.modelId);
+        if (named !== null) model = named;
         continue;
       }
 
       if (p.type !== "token_count" || !sessionId) continue;
       const last = p.info?.last_token_usage;
       if (!last) continue;
+
+      // Incremental syncs read only the bytes appended since the last run, so
+      // session_meta — which sits at the top of the file — is absent from every
+      // chunk after the first. Take the model from the usage line when it is
+      // there, so a resumed session is not left nameless.
+      const inlineModel = firstString(p.info?.model, (last as { model?: unknown }).model);
+      if (inlineModel !== null) model = inlineModel;
 
       const total = num(last.total_tokens);
       if (total === 0) continue; // empty updates carry no usage
@@ -79,7 +104,12 @@ export const codexParser: Parser = {
       const reqId =
         typeof p.request_id === "string" ? p.request_id : typeof p.id === "string" ? p.id : "";
       records.push({
-        dedupKey: dedupKey(ctx.tool, sessionId, reqId || String(linesRead), timestamp || String(linesRead)),
+        dedupKey: dedupKey(
+          ctx.tool,
+          sessionId,
+          reqId || String(linesRead),
+          timestamp || String(linesRead),
+        ),
         tool: ctx.tool,
         model,
         inputTokens: inputTokens - cached,

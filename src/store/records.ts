@@ -11,8 +11,12 @@ import type { UsageRecord } from "../shared/types.js";
  * zeros permanently. Such a row is overwritten as soon as a sync sees real
  * counts for it, which also repairs rows an earlier version already zeroed.
  *
- * The guard is deliberately one-directional — real counts never downgrade to
- * zero, and a row that already has counts is never rewritten — so this stays
+ * A second, narrower repair covers a row stored as model 'unknown' while its
+ * token counts were fine — a parser that failed to read the model name. Only
+ * that direction is allowed.
+ *
+ * Both guards are deliberately one-directional — real counts never downgrade to
+ * zero and a real model name is never replaced with 'unknown' — so this stays
  * idempotent: syncing twice still reports zero additions the second time.
  *
  * Returns the number of newly added rows (repairs are not counted as adds).
@@ -33,13 +37,24 @@ export function insertRecords(db: DatabaseSync, records: UsageRecord[]): number 
        reasoning_tokens = excluded.reasoning_tokens,
        cost_usd = excluded.cost_usd,
        recorded_at = excluded.recorded_at
-     WHERE usage_records.input_tokens = 0
-       AND usage_records.output_tokens = 0
-       AND usage_records.cache_read_tokens = 0
-       AND usage_records.cache_write_tokens = 0
-       AND usage_records.reasoning_tokens = 0
-       AND (excluded.input_tokens + excluded.output_tokens + excluded.cache_read_tokens
-            + excluded.cache_write_tokens + excluded.reasoning_tokens) > 0`,
+     WHERE (
+         -- A row persisted before its token counts landed: fill them in once a
+         -- sync sees real ones.
+         usage_records.input_tokens = 0
+         AND usage_records.output_tokens = 0
+         AND usage_records.cache_read_tokens = 0
+         AND usage_records.cache_write_tokens = 0
+         AND usage_records.reasoning_tokens = 0
+         AND (excluded.input_tokens + excluded.output_tokens + excluded.cache_read_tokens
+              + excluded.cache_write_tokens + excluded.reasoning_tokens) > 0
+       )
+       OR (
+         -- A row stored without a model name, which a parser bug could produce
+         -- even though its tokens were correct. Naming it is safe; the reverse
+         -- never happens, so a real name is never overwritten with 'unknown'.
+         usage_records.model = 'unknown'
+         AND excluded.model <> 'unknown'
+       )`,
   );
   const exists = db.prepare("SELECT 1 FROM usage_records WHERE dedup_key = ?");
   let added = 0;
