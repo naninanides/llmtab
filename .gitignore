@@ -8,3 +8,10 @@ coverage/
 .env.*
 *.tgz
 packages/desktop/package-lock.json
+
+# Removed from the repo at the owner's request (history rewritten in the same
+# change). CI runs `npm test`, so a clone without test/ cannot run the suite —
+# keep a local copy.
+test/
+docs/
+design/
