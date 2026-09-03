@@ -87,7 +87,7 @@ export default function App(): ReactNode {
         // Constraining here keeps the chrome fixed and hands the overflow to
         // the one list that is meant to absorb it.
         <div data-fit-shell className="relative h-screen w-full overflow-hidden">
-          <div className="relative z-10 mx-auto flex h-full max-w-[300px] flex-col p-2">
+          <div className="relative z-10 flex h-full w-full flex-col p-2">
             <PopoverView onOpenDashboard={() => setView("dashboard")} />
           </div>
         </div>

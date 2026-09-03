@@ -340,8 +340,23 @@ async function syncNow(): Promise<void> {
 }
 
 /** Where the popover should sit for a given height, anchored to the tray. */
+/**
+ * Popover width for the current display. A tray popover should stay narrow, so
+ * this is a small fraction of the work area clamped to a readable range — 300px
+ * on a 1080p screen, wider on a large or scaled display, never so wide that it
+ * stops reading as a popover.
+ */
+function popoverWidthFor(): number {
+  try {
+    const { width } = screen.getPrimaryDisplay().workAreaSize;
+    return Math.max(300, Math.min(420, Math.round(width * 0.17)));
+  } catch {
+    return 300;
+  }
+}
+
 function popoverAnchor(height?: number): { x: number; y: number } {
-  const fallback = win ? win.getBounds() : { x: 0, y: 0, width: 300, height: 240 };
+  const fallback = win ? win.getBounds() : { x: 0, y: 0, width: popoverWidthFor(), height: 240 };
   if (!win || win.isDestroyed() || !tray) return { x: fallback.x, y: fallback.y };
   const b = win.getBounds();
   const winBounds = { ...b, height: height ?? b.height };
@@ -406,8 +421,12 @@ function createPopoverWindow(): void {
   if (!dashboardPort) return;
   const isMac = process.platform === "darwin";
   const icon = appIcon();
+  // Width scales with the display instead of a fixed 300px, which was cramped
+  // on a large screen and left the panel narrower than the window. Bounded so
+  // it stays a popover rather than growing into a window.
+  const popoverWidth = popoverWidthFor();
   const winOpts: Electron.BrowserWindowConstructorOptions = {
-    width: 300,
+    width: popoverWidth,
     height: 420,
     show: false, // hidden sampai tray diklik
     frame: false, // REQUIRED: tidak ada frame agar seperti popover
