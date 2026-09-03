@@ -395,25 +395,40 @@ function createPopoverWindow(): void {
   // never shrink back when a shorter tab was selected. The panel does change
   // height, and a MutationObserver covers a tab swap that replaces the body
   // outright rather than resizing it.
+  // Version the guard: the popover window is reused across opens, so a stale
+  // observer installed by an earlier build would otherwise block this one from
+  // ever being set up.
+  const FIT_VERSION = 3;
+
+  // Watches the tab body, not #root and not the panel. #root is pinned to the
+  // window height by the popover layout so it never resizes, and the panel
+  // element survives a tab switch — only the body inside it is swapped, so
+  // that is the thing whose size actually tracks the selected tab. A
+  // MutationObserver re-points the ResizeObserver whenever React replaces it.
   const OBSERVE = `(() => {
-    if (window.__llmtabFit) return true;
+    const prev = window.__llmtabFit;
+    if (prev && prev.v === ${FIT_VERSION}) return true;
+    if (prev) {
+      try { prev.ro && prev.ro.disconnect(); } catch {}
+      try { prev.mo && prev.mo.disconnect(); } catch {}
+    }
+    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null };
+    window.__llmtabFit = state;
     const emit = () => {
       try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
     };
-    const ro = new ResizeObserver(emit);
+    state.ro = new ResizeObserver(emit);
     const watch = () => {
-      const panel = document.querySelector('.glass-hud, .glass');
-      if (panel && panel !== window.__llmtabFit.panel) {
-        if (window.__llmtabFit.panel) ro.unobserve(window.__llmtabFit.panel);
-        ro.observe(panel);
-        window.__llmtabFit.panel = panel;
+      const target = document.querySelector('.panel-in') || document.querySelector('.glass-hud, .glass');
+      if (target && target !== state.target) {
+        if (state.target) { try { state.ro.unobserve(state.target); } catch {} }
+        state.ro.observe(target);
+        state.target = target;
       }
     };
-    window.__llmtabFit = { ro, panel: null };
-    const mo = new MutationObserver(() => { watch(); emit(); });
+    state.mo = new MutationObserver(() => { watch(); emit(); });
     const root = document.getElementById('root');
-    if (root) mo.observe(root, { childList: true, subtree: true });
-    window.__llmtabFit.mo = mo;
+    if (root) state.mo.observe(root, { childList: true, subtree: true });
     watch();
     emit();
     return true;
