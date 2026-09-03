@@ -389,15 +389,32 @@ function createPopoverWindow(): void {
 
   // Reports height the moment content changes. Title-cased channel so it cannot
   // collide with anything the app logs.
+  // Observes the panel, not #root. The popover is bounded to the window, so
+  // #root is always exactly the window height and never resizes — watching it
+  // meant the observer fell silent after the first grow and the window could
+  // never shrink back when a shorter tab was selected. The panel does change
+  // height, and a MutationObserver covers a tab swap that replaces the body
+  // outright rather than resizing it.
   const OBSERVE = `(() => {
     if (window.__llmtabFit) return true;
     const emit = () => {
       try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
     };
     const ro = new ResizeObserver(emit);
+    const watch = () => {
+      const panel = document.querySelector('.glass-hud, .glass');
+      if (panel && panel !== window.__llmtabFit.panel) {
+        if (window.__llmtabFit.panel) ro.unobserve(window.__llmtabFit.panel);
+        ro.observe(panel);
+        window.__llmtabFit.panel = panel;
+      }
+    };
+    window.__llmtabFit = { ro, panel: null };
+    const mo = new MutationObserver(() => { watch(); emit(); });
     const root = document.getElementById('root');
-    if (root) ro.observe(root);
-    window.__llmtabFit = { ro };
+    if (root) mo.observe(root, { childList: true, subtree: true });
+    window.__llmtabFit.mo = mo;
+    watch();
     emit();
     return true;
   })()`;
@@ -409,7 +426,10 @@ function createPopoverWindow(): void {
     const [, curH] = win.getSize() as [number, number];
     // 4px deadband: ignore sub-pixel churn, act on real layout changes.
     if (curH !== undefined && Math.abs(curH - target) > 4) {
-      win.setSize(300, Math.round(target), false);
+      // Animate on macOS, where the platform interpolates the frame for us and
+      // the fade lands inside a window that is already moving. Windows has no
+      // equivalent, so an animated setSize there just delays the paint.
+      win.setSize(300, Math.round(target), process.platform === "darwin");
       positionWindow();
     }
   };
