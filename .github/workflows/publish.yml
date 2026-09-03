@@ -86,30 +86,17 @@ jobs:
         run: |
           root="$(node -p "require('./package.json').version")"
           range="$(node -p "require('./packages/desktop/package.json').dependencies.llmtab")"
-          # Semver deliberately excludes prereleases from a caret range, so a
-          # beta can never satisfy `^2.0.2`. That is correct rather than broken:
-          # installing llmtab-desktop@beta resolves llmtab to the current stable,
-          # which is the supported pairing. Only a stable release has to fall
-          # inside the range, so the check is skipped for a prerelease and the
-          # resolved pairing is printed instead.
-          case "$root" in
-            *-*)
-              echo "prerelease $root — llmtab-desktop keeps depending on llmtab@$range (resolves to stable)"
-              npx --yes semver --range "$range" "$(npm view llmtab version)" >/dev/null 2>&1 || {
-                echo "::error::llmtab-desktop depends on llmtab@$range, which excludes even the published stable"
-                exit 1
-              }
-              ;;
-            *)
-              if ! npx --yes semver --range "$range" "$root" >/dev/null 2>&1; then
-                echo "::error::llmtab-desktop depends on llmtab@$range, which excludes the $root being published"
-                exit 1
-              fi
-              ;;
-          esac
+          # llmtab-desktop is a launcher: bin.mjs resolves the shell out of the
+          # llmtab package, so the CLI version is the app version. The range has
+          # to admit exactly what is being published — including a prerelease,
+          # which a plain caret range would exclude — or the desktop package
+          # installs a different build than the one just released.
+          if ! npx --yes semver --range "$range" "$root" >/dev/null 2>&1; then
+            echo "::error::llmtab-desktop depends on llmtab@$range, which excludes the $root being published"
+            echo "::error::a prerelease needs a prerelease-admitting range, e.g. ^${root%%-*}-0"
+            exit 1
+          fi
 
-      # Prints the exact file list each tarball would ship — the cheapest way
-      # to catch a `files` entry that stopped matching reality.
       - name: Dry run
         if: inputs.dry_run
         run: |

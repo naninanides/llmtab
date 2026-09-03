@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.1.1-beta.2] — 2026-09-03
+
+### Fixed
+
+- **`llmtab-desktop@beta` installed the stable CLI**, so the tray app ran the previous build: no version in the footer, and the Quotas tab still scrolling as one unit. The desktop package is a launcher — `bin.mjs` resolves the shell out of the `llmtab` package — so the CLI version is the app version, and its `^2.0.2` range excluded the prerelease. It now depends on `^2.1.1-0`, which admits it.
+- The publish gate is strict again for prereleases. It was relaxed in beta.1 on the mistaken reasoning that a beta resolving to the stable CLI was an acceptable pairing; it is not, because the CLI carries the whole app.
+
 ## [2.1.1-beta.1] — 2026-09-03
 
 Prerelease. Published to the `beta` dist-tag, so `npm install -g llmtab` still
