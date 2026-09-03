@@ -115,6 +115,46 @@ async function bootstrap(): Promise<void> {
   if (process.platform === "darwin") {
     tray.on("double-click", () => trayToggle());
   }
+
+  // Keep an open popover anchored to the tray. The position used to be computed
+  // once on show and never revisited, so an auto-hiding taskbar, a resolution
+  // change or a monitor being connected left the popover floating away from the
+  // tray icon. workArea changes on all of those, and repositioning is cheap.
+  const reanchor = (): void => {
+    if (!win || win.isDestroyed() || !win.isVisible()) return;
+    positionWindow();
+  };
+  screen.on("display-metrics-changed", reanchor);
+  screen.on("display-added", reanchor);
+  screen.on("display-removed", reanchor);
+
+  // An auto-hiding Windows taskbar raises no display event — it overlays rather
+  // than changing the work area — and the tray icon's own rectangle moves when
+  // icons are shown or hidden in the overflow flyout. Both leave the popover
+  // detached from the icon, so while it is open the anchor is rechecked and
+  // applied only when it has actually drifted.
+  let anchorWatch: NodeJS.Timeout | null = null;
+  const startAnchorWatch = (): void => {
+    if (anchorWatch || process.platform === "darwin") return;
+    anchorWatch = setInterval(() => {
+      if (!win || win.isDestroyed() || !win.isVisible()) return;
+      const b = win.getBounds();
+      const want = popoverAnchor();
+      // 2px deadband so rounding never causes a visible twitch.
+      if (Math.abs(b.x - want.x) > 2 || Math.abs(b.y - want.y) > 2) positionWindow();
+    }, 500);
+    anchorWatch.unref?.();
+  };
+  const stopAnchorWatch = (): void => {
+    if (!anchorWatch) return;
+    clearInterval(anchorWatch);
+    anchorWatch = null;
+  };
+  if (win) {
+    win.on("show", startAnchorWatch);
+    win.on("hide", stopAnchorWatch);
+    win.on("closed", stopAnchorWatch);
+  }
 }
 
 async function refreshTray(db: DatabaseSync): Promise<void> {
@@ -303,20 +343,53 @@ async function syncNow(): Promise<void> {
 function popoverAnchor(height?: number): { x: number; y: number } {
   const fallback = win ? win.getBounds() : { x: 0, y: 0, width: 300, height: 240 };
   if (!win || win.isDestroyed() || !tray) return { x: fallback.x, y: fallback.y };
-  const trayBounds = tray.getBounds();
   const b = win.getBounds();
   const winBounds = { ...b, height: height ?? b.height };
-  const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
-  let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
-  let y = Math.round(trayBounds.y + trayBounds.height + 6);
   const margin = 8;
-  const maxX = display.bounds.x + display.bounds.width - winBounds.width - margin;
-  const minX = display.bounds.x + margin;
+
+  const trayBounds = tray.getBounds();
+  // Windows reports an empty rectangle when the icon sits in the hidden
+  // overflow flyout, and the anchor maths then collapses to the top-left of the
+  // screen — the popover floats away from the tray entirely. Treat that as
+  // "position unknown" and fall back to the corner of the work area nearest the
+  // taskbar, which is where a tray popover belongs.
+  const known = trayBounds.width > 0 && trayBounds.height > 0;
+
+  // workArea excludes the taskbar and the macOS menu bar. `bounds` does not, so
+  // using it allowed the popover to sit underneath the taskbar; it also means
+  // the position follows the taskbar when it is hidden, moved or resized.
+  const display = known
+    ? screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y })
+    : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const area = display.workArea;
+
+  const minX = area.x + margin;
+  const maxX = area.x + area.width - winBounds.width - margin;
+  const minY = area.y + margin;
+  const maxY = area.y + area.height - winBounds.height - margin;
+
+  if (!known) {
+    // Bottom-right for a bottom or right taskbar, top-right otherwise: the
+    // work area's own offset tells us which edge the taskbar occupies.
+    const taskbarAtTop = area.y > display.bounds.y;
+    return {
+      x: Math.max(minX, maxX),
+      y: taskbarAtTop ? Math.max(minY, Math.min(minY, maxY)) : Math.max(minY, maxY),
+    };
+  }
+
+  let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
   x = Math.max(minX, Math.min(x, maxX));
-  const isTop = trayBounds.y < display.bounds.y + display.bounds.height / 2;
-  if (!isTop) y = Math.round(trayBounds.y - winBounds.height - 6);
-  const maxY = display.bounds.y + display.bounds.height - winBounds.height - margin;
-  y = Math.max(display.bounds.y + margin, Math.min(y, maxY));
+
+  // Open away from the edge the tray sits on: downward from a top taskbar,
+  // upward from a bottom one.
+  const trayCentreY = trayBounds.y + trayBounds.height / 2;
+  const opensDownward = trayCentreY < area.y + area.height / 2;
+  let y = opensDownward
+    ? Math.round(trayBounds.y + trayBounds.height + 6)
+    : Math.round(trayBounds.y - winBounds.height - 6);
+  y = Math.max(minY, Math.min(y, maxY));
+
   return { x, y };
 }
 
