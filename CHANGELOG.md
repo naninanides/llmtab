@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.1.2] — 2026-09-03
+
+### Fixed
+
+- **A stable `llmtab-desktop` install resolved the CLI to a prerelease.** The dependency was widened to `^2.1.1-0` in 2.1.1 so the beta launcher could load the beta CLI, but that range also admits prereleases on a stable install, so `npm i -g llmtab-desktop` reported `v2.1.1-beta.2` in the footer. The range is now `^2.1.1`, which excludes prereleases; a beta release bumps it deliberately when it needs to.
+
 ## [2.1.1] — 2026-09-03
 
 Promotes 2.1.1-beta.2 to stable. `npm install -g llmtab-desktop` now installs
