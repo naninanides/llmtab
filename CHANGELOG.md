@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.6] — 2026-09-03
+
+### Fixed
+
+- **The popover panel did not fill its own window**, leaving dead space to the right. The wrapper was capped at 300px while the shell sized the window separately — measured at a 500px viewport, a 284px panel with 108px of unused width beside it. The wrapper now fills the window, leaving only the intended 8px padding.
+- **The popover width was hardcoded at 300px** and never adapted to resolution or DPI, so it was cramped on a large display. It now scales with the work area, clamped to 300–420px so it stays a popover: 300px at 1366px wide, 326px at 1080p, 420px on 1440p and above. A height change preserves the live width, and the no-window fallback shares the same computation rather than repeating the constant.
+
 ## [2.1.5] — 2026-09-03
 
 ### Fixed

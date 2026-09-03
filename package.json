@@ -1,6 +1,6 @@
 {
   "name": "llmtab",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "description": "Local-first LLM token usage & cost tracker for Claude Code, Codex, OpenCode, Gemini CLI, ZCode and Ollama.",
   "type": "module",
   "license": "MIT",
