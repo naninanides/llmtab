@@ -17,13 +17,15 @@ interface CodexLine {
     id?: unknown;
     request_id?: unknown;
     cwd?: unknown;
-    /** Model recorded on the session; key has varied across Codex versions. */
+    /**
+     * Model for the turn. Verified against Codex 0.153.0: this sits on
+     * `turn_context`, not `session_meta` — the only model mention in
+     * session_meta is inside the `base_instructions` prose, which is prompt
+     * content and must never be read (PRD §10).
+     */
     model?: unknown;
-    model_slug?: unknown;
-    modelId?: unknown;
     info?: {
       last_token_usage?: Record<string, unknown>;
-      model?: unknown;
     };
   };
 }
@@ -65,7 +67,8 @@ export const codexParser: Parser = {
         continue;
       }
       const cl = obj as CodexLine;
-      if (cl.type !== "session_meta" && cl.type !== "event_msg") continue;
+      if (cl.type !== "session_meta" && cl.type !== "event_msg" && cl.type !== "turn_context")
+        continue;
 
       const p = cl.payload ?? {};
       const timestamp = typeof cl.timestamp === "string" ? cl.timestamp : "";
@@ -74,24 +77,22 @@ export const codexParser: Parser = {
         // line-level type; payload carries id/cwd without its own type field
         if (typeof p.id === "string") sessionId = p.id;
         if (typeof p.cwd === "string" && !ctx.project) cwd = p.cwd;
-        // The model was previously never read, so every record was stored as
-        // "unknown" and the dashboard showed a nameless row. Codex has spelled
-        // this key differently across versions, so take whichever is present.
-        const named = firstString(p.model, p.model_slug, p.modelId);
+        continue;
+      }
+
+      // `turn_context` names the model for the turns that follow it. The model
+      // was previously never read at all, so every Codex record was stored as
+      // "unknown" and showed in the dashboard as a nameless row.
+      if (cl.type === "turn_context") {
+        const named = firstString(p.model);
         if (named !== null) model = named;
+        if (typeof p.cwd === "string" && !ctx.project) cwd = p.cwd;
         continue;
       }
 
       if (p.type !== "token_count" || !sessionId) continue;
       const last = p.info?.last_token_usage;
       if (!last) continue;
-
-      // Incremental syncs read only the bytes appended since the last run, so
-      // session_meta — which sits at the top of the file — is absent from every
-      // chunk after the first. Take the model from the usage line when it is
-      // there, so a resumed session is not left nameless.
-      const inlineModel = firstString(p.info?.model, (last as { model?: unknown }).model);
-      if (inlineModel !== null) model = inlineModel;
 
       const total = num(last.total_tokens);
       if (total === 0) continue; // empty updates carry no usage
