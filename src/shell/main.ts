@@ -316,20 +316,7 @@ function popoverAnchor(height?: number): { x: number; y: number } {
 
 function positionWindow(): void {
   if (!win || win.isDestroyed() || !tray) return;
-  const trayBounds = tray.getBounds();
-  const winBounds = win.getBounds();
-  const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
-  // Posisikan tepat di bawah ikon tray, center horizontal (macOS menu bar di atas)
-  let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
-  let y = Math.round(trayBounds.y + trayBounds.height + 6);
-  const margin = 8;
-  const maxX = display.bounds.x + display.bounds.width - winBounds.width - margin;
-  const minX = display.bounds.x + margin;
-  x = Math.max(minX, Math.min(x, maxX));
-  const isTop = trayBounds.y < display.bounds.y + display.bounds.height / 2;
-  if (!isTop) y = Math.round(trayBounds.y - winBounds.height - 6);
-  const maxY = display.bounds.y + display.bounds.height - winBounds.height - margin;
-  y = Math.max(display.bounds.y + margin, Math.min(y, maxY));
+  const { x, y } = popoverAnchor();
   win.setPosition(x, y, false);
 }
 
@@ -391,149 +378,11 @@ function createPopoverWindow(): void {
   const workArea = screen.getPrimaryDisplay().workAreaSize.height;
   const MAX_POPOVER_H = Math.max(640, Math.min(900, workArea - 120));
 
-  // Measuring the natural height of the content, not the laid-out height.
-  //
-  // The popover fills the window by design — that is what pins the tabs and the
-  // footer while the quota list scrolls. The cost is that #root, body, the panel
-  // and the tab body all end up sized by the window, so every candidate metric
-  // is a fixed point: the measurement tracked the window instead of the content
-  // and the frame could grow but never shrink back.
-  //
-  // The reliable way out is to ask the layout directly. Lift the constraint for
-  // one synchronous reflow, read what the content actually wants, then put it
-  // back before the frame is painted. The write/read/write happens inside a
-  // single task, so nothing flickers.
-  const MEASURE = `(() => {
-    const shell = document.querySelector('[data-fit-shell]');
-    const root = document.getElementById('root');
-    if (!shell) {
-      return Math.min(${MAX_POPOVER_H}, Math.max(240, root ? root.scrollHeight : 240));
-    }
-    const prevH = shell.style.height;
-    const prevOverflow = shell.style.overflow;
-    shell.style.height = 'auto';
-    shell.style.overflow = 'visible';
-    // Forces the reflow that makes the reads below reflect the unconstrained
-    // layout rather than the cached one.
-    const want = shell.scrollHeight;
-    shell.style.height = prevH;
-    shell.style.overflow = prevOverflow;
-    return Math.min(${MAX_POPOVER_H}, Math.max(240, Math.round(want + 16)));
-  })()`;
-
-  // Reports height the moment content changes. Title-cased channel so it cannot
-  // collide with anything the app logs.
-  // Observes the panel, not #root. The popover is bounded to the window, so
-  // #root is always exactly the window height and never resizes — watching it
-  // meant the observer fell silent after the first grow and the window could
-  // never shrink back when a shorter tab was selected. The panel does change
-  // height, and a MutationObserver covers a tab swap that replaces the body
-  // outright rather than resizing it.
-  // Version the guard: the popover window is reused across opens, so a stale
-  // observer installed by an earlier build would otherwise block this one from
-  // ever being set up.
-  const FIT_VERSION = 4;
-
-  // Watches the tab body, not #root and not the panel. #root is pinned to the
-  // window height by the popover layout so it never resizes, and the panel
-  // element survives a tab switch — only the body inside it is swapped, so
-  // that is the thing whose size actually tracks the selected tab. A
-  // MutationObserver re-points the ResizeObserver whenever React replaces it.
-  const OBSERVE = `(() => {
-    const prev = window.__llmtabFit;
-    if (prev && prev.v === ${FIT_VERSION}) return true;
-    // Release everything the previous install held. Earlier versions stored
-    // only { ro } or { ro, panel } and registered a document-level mousedown
-    // listener they never removed, so each reload left another observer and
-    // another listener attached — every tab switch then ran emit() once per
-    // leaked observer, and the popover grew progressively less responsive the
-    // longer the app stayed open. dispose() is now the single teardown path
-    // and is stored on the state so any future version can call it blindly.
-    if (prev) {
-      try { prev.dispose && prev.dispose(); } catch {}
-      try { prev.ro && prev.ro.disconnect(); } catch {}
-      try { prev.mo && prev.mo.disconnect(); } catch {}
-    }
-    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null, known: {}, last: 0, dispose: null };
-    window.__llmtabFit = state;
-
-    /** Which tab is selected, used as the cache key. */
-    const currentTab = () => {
-      const sel = document.querySelector('[role="tab"][aria-selected="true"]');
-      return sel ? (sel.textContent || '').trim() : '';
-    };
-    // Latency is what makes the resize feel late, so the measurement is taken
-    // synchronously in the same task as the DOM change and sent immediately.
-    // MEASURE reads the layout under a lifted height constraint, which forces
-    // its own reflow, so it already sees the committed tab rather than a
-    // half-built one — the earlier double-rAF only added ~32ms before the
-    // window could begin moving.
-    //
-    // A trailing rAF still fires once afterwards to catch anything that
-    // settles late (a font swap, an image), coalesced so a burst of mutations
-    // produces at most one extra resize.
-    let trailing = false;
-    // Only report a height that differs from the last one sent. Rapid
-    // switching otherwise emitted the same value repeatedly — the prediction,
-    // the measurement and the trailing correction all agree once a tab has
-    // been seen — and each report crossed to the main process for nothing.
-    const report = (h) => {
-      if (typeof h !== 'number' || !isFinite(h)) return;
-      if (state.last === h) return;
-      state.last = h;
-      try { console.debug('LLMTAB_FIT:' + h); } catch {}
-    };
-    const send = () => {
-      try {
-        const h = ${MEASURE};
-        const tab = currentTab();
-        if (tab) state.known[tab] = h;
-        report(h);
-      } catch {}
-    };
-    const emit = () => {
-      send();
-      if (trailing) return;
-      trailing = true;
-      requestAnimationFrame(() => {
-        trailing = false;
-        send();
-      });
-    };
-    state.ro = new ResizeObserver(emit);
-    const watch = () => {
-      const target = document.querySelector('.panel-in') || document.querySelector('.glass-hud, .glass');
-      if (target && target !== state.target) {
-        if (state.target) { try { state.ro.unobserve(state.target); } catch {} }
-        state.ro.observe(target);
-        state.target = target;
-      }
-    };
-    // Resize on the way in, not after. Clicking a tab whose height was measured
-    // on a previous visit sends that height immediately, so the window is
-    // already moving while React renders — the measurement afterwards only
-    // corrects it if the content actually changed size.
-    const onDown = (e) => {
-      const tab = e.target && e.target.closest && e.target.closest('[role="tab"]');
-      if (!tab) return;
-      const label = (tab.textContent || '').trim();
-      const h = state.known[label];
-      if (typeof h === 'number') report(h);
-    };
-    document.addEventListener('mousedown', onDown, true);
-
-    state.mo = new MutationObserver(() => { watch(); emit(); });
-    state.dispose = () => {
-      try { document.removeEventListener('mousedown', onDown, true); } catch {}
-      try { state.ro && state.ro.disconnect(); } catch {}
-      try { state.mo && state.mo.disconnect(); } catch {}
-    };
-    const root = document.getElementById('root');
-    if (root) state.mo.observe(root, { childList: true, subtree: true });
-    watch();
-    emit();
-    return true;
-  })()`;
+  // Height reporting lives in the renderer (dashboard/src/popover-fit.ts),
+  // where it is typed, linted and testable — StyleGuide §9 keeps the main
+  // process to orchestration. All this side has to do is tell the renderer the
+  // ceiling it may ask for, then apply what comes back on the console channel.
+  const INJECT_MAX = `window.__LLMTAB_MAX_H = ${MAX_POPOVER_H};`;
 
   // Every tab switch reports its height more than once — the prediction on
   // mousedown, the measurement after the render, and a trailing correction.
@@ -590,10 +439,15 @@ function createPopoverWindow(): void {
     flushTimer = setTimeout(flushHeight, 45);
   };
 
+  // Safety net for a change no observer caught; the renderer owns the value,
+  // so this only asks it to re-report rather than measuring here.
   const fitPopoverHeight = async (): Promise<void> => {
     if (!win || win.isDestroyed() || !win.isVisible()) return;
     try {
-      applyHeight(await win.webContents.executeJavaScript(MEASURE, true));
+      await win.webContents.executeJavaScript(
+        "window.__llmtabFit && window.__llmtabFit.emit && window.__llmtabFit.emit()",
+        true,
+      );
     } catch {}
   };
 
@@ -606,10 +460,10 @@ function createPopoverWindow(): void {
 
   const startFit = (): void => {
     if (fitTimer) clearInterval(fitTimer);
+    void win?.webContents.executeJavaScript(INJECT_MAX, true).catch(() => {});
     // Was 300ms; the observer carries the real work now.
     fitTimer = setInterval(() => void fitPopoverHeight(), 2000);
     fitTimer.unref?.();
-    void win?.webContents.executeJavaScript(OBSERVE, true).catch(() => {});
     void fitPopoverHeight();
   };
   const stopFit = (): void => {

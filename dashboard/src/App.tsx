@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { RangeProvider, useRange } from "@/hooks/useRange";
+import { startPopoverFit } from "@/popover-fit";
 import { useAsync, Skeleton } from "@/hooks/useAsync";
 import {
   api,
@@ -66,6 +67,15 @@ export default function App(): ReactNode {
   const [view, setView] = useState<View>(() =>
     window.location.pathname.startsWith("/dashboard") ? "dashboard" : "popover",
   );
+
+  // Report the height the popover wants so the shell can size its window. Only
+  // the popover is bounded to a window; the dashboard is an ordinary page.
+  useEffect(() => {
+    if (view !== "popover") return;
+    const max = Number(window.__LLMTAB_MAX_H) || 900;
+    const fit = startPopoverFit(max);
+    return () => fit.dispose();
+  }, [view]);
 
   return (
     <RangeProvider>
