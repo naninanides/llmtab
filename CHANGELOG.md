@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.5] — 2026-09-03
+
+### Fixed
+
+- **The Windows popover could open detached from the tray icon** and stayed put when the taskbar auto-hid. `tray.getBounds()` returns an empty rectangle when the icon sits in the hidden overflow flyout, and the anchor arithmetic then collapsed to the top-left of the screen; that case now anchors to the work-area corner nearest the taskbar. The anchor also uses `workArea` rather than `display.bounds`, so it no longer sits under the taskbar or the macOS menu bar and follows a taskbar that moves or resizes.
+- **An open popover now re-anchors** on display added, removed or metrics changed. An auto-hiding taskbar raises none of those, so while the popover is open the anchor is rechecked every 500ms and applied only when it has drifted more than 2px. The watch is skipped on macOS and stops when the window hides.
+- Which edge the popover opens from is derived from the tray icon's position within the work area rather than the full screen, so top, bottom and side taskbars all place it correctly.
+
+
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
