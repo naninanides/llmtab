@@ -388,6 +388,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
               >
                 <IconExternal size={10} /> Open web app
               </button>
+              <AppVersion />
               {IS_ELECTRON ? (
                 <button
                   onClick={() => window.close()}
@@ -403,6 +404,22 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
         )}
       </Panel>
     </div>
+  );
+}
+
+/**
+ * Build the server is running. Rendered as plain text, not a control — it is
+ * there to be read when reporting a problem, not clicked. Absent until the
+ * request lands, and stays absent if it fails, so a footer never shows "v?".
+ */
+function AppVersion({ className = "" }: { className?: string }): ReactNode {
+  const health = useAsync(() => api.health(), []);
+  const version = health.data?.version;
+  if (!version) return null;
+  return (
+    <span className={`tabular-nums text-text-3 ${className}`} title="LLMTab version">
+      v{version}
+    </span>
   );
 }
 
@@ -702,6 +719,11 @@ function DashboardView({ onBack }: { onBack: () => void }): ReactNode {
         </>
       )}
       <SyncFooter />
+      {/* Outside SyncFooter on purpose: that returns null before the first sync
+          or when the request fails, and the build should still be readable. */}
+      <div className="-mt-2 pb-6 text-xs text-text-3">
+        LLMTab <AppVersion />
+      </div>
     </main>
   );
 }

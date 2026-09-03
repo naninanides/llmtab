@@ -97,6 +97,8 @@ export interface QuotaProvider {
 }
 
 export const api = {
+  /** Build the server is running, for the footer. */
+  health: () => get<{ ok: boolean; version?: string }>("/api/healthz"),
   summary: (r: RangeDef) => get<SummaryResponse>(`/api/summary?range=${rangeParam(r)}`),
   daily: (r: RangeDef) => get<{ days: DayRow[] }>(`/api/daily?range=${rangeParam(r)}`),
   models: (r: RangeDef) => get<{ models: ModelRow[] }>(`/api/models?range=${rangeParam(r)}`),

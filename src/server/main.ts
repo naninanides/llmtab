@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb } from "../store/db.js";
 import { detectTools } from "../ingest/detector.js";
+import { currentVersion } from "../cli/update.js";
 import { parseRange } from "../shared/time.js";
 import type { Window } from "./queries.js";
 import {
@@ -63,7 +64,9 @@ export function createServer(): http.Server {
 
     switch (url.pathname) {
       case "/api/healthz":
-        return json(200, { ok: true });
+        // `version` is here so the dashboard footer can show which build it is
+        // talking to; healthz is already the endpoint that answers "what am I".
+        return json(200, { ok: true, version: currentVersion() });
       case "/api/status":
         return json(200, { tools: detectTools() });
       case "/api/sync/last": {

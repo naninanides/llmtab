@@ -61,7 +61,11 @@ export function SyncFooter(): ReactNode {
   useEffect(() => {
     const tick = () =>
       setStamp(
-        new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
       );
     tick();
     const iv = setInterval(tick, 10_000);
@@ -72,7 +76,7 @@ export function SyncFooter(): ReactNode {
   const s = last.data.lastSync;
 
   return (
-    <footer className="mt-8 border-t border-border pt-4 pb-6 text-xs text-text-2">
+    <footer className="mt-8 border-t border-border pt-4 pb-1 text-xs text-text-2">
       Last sync{" "}
       {new Date(s.finishedAt).toLocaleString("en-US", {
         month: "short",
@@ -80,8 +84,7 @@ export function SyncFooter(): ReactNode {
         hour: "2-digit",
         minute: "2-digit",
       })}
-      {" · "}
-      +{s.recordsAdded} records{s.linesSkipped > 0 ? ` · ${s.linesSkipped} skipped` : ""}
+      {" · "}+{s.recordsAdded} records{s.linesSkipped > 0 ? ` · ${s.linesSkipped} skipped` : ""}
       {" · "}
       {s.entries.map((e) => `${e.tool} +${e.recordsAdded}`).join(", ")}
       {" · "}
