@@ -370,21 +370,34 @@ function createPopoverWindow(): void {
   const workArea = screen.getPrimaryDisplay().workAreaSize.height;
   const MAX_POPOVER_H = Math.max(640, Math.min(900, workArea - 120));
 
-  // The popover is bounded to the window so its chrome stays fixed, which means
-  // scrollHeight reports the clamped height, not what the content actually
-  // wants — the window could never grow past its current size. Ask the scrollable
-  // list how much it is hiding and add that back.
+  // Measuring the natural height of the content, not the laid-out height.
+  //
+  // The popover fills the window by design — that is what pins the tabs and the
+  // footer while the quota list scrolls. The cost is that #root, body, the panel
+  // and the tab body all end up sized by the window, so every candidate metric
+  // is a fixed point: the measurement tracked the window instead of the content
+  // and the frame could grow but never shrink back.
+  //
+  // The reliable way out is to ask the layout directly. Lift the constraint for
+  // one synchronous reflow, read what the content actually wants, then put it
+  // back before the frame is painted. The write/read/write happens inside a
+  // single task, so nothing flickers.
   const MEASURE = `(() => {
+    const shell = document.querySelector('[data-fit-shell]');
     const root = document.getElementById('root');
-    const panel = document.querySelector('.glass-hud, .glass');
-    const rh = root ? root.scrollHeight : 0;
-    const ph = panel ? panel.getBoundingClientRect().height + 16 : 0;
-    let hidden = 0;
-    for (const el of document.querySelectorAll('[data-fit-grow]')) {
-      hidden = Math.max(hidden, el.scrollHeight - el.clientHeight);
+    if (!shell) {
+      return Math.min(${MAX_POPOVER_H}, Math.max(240, root ? root.scrollHeight : 240));
     }
-    const want = Math.max(rh, ph, document.body.scrollHeight) + hidden;
-    return Math.min(${MAX_POPOVER_H}, Math.max(240, want));
+    const prevH = shell.style.height;
+    const prevOverflow = shell.style.overflow;
+    shell.style.height = 'auto';
+    shell.style.overflow = 'visible';
+    // Forces the reflow that makes the reads below reflect the unconstrained
+    // layout rather than the cached one.
+    const want = shell.scrollHeight;
+    shell.style.height = prevH;
+    shell.style.overflow = prevOverflow;
+    return Math.min(${MAX_POPOVER_H}, Math.max(240, Math.round(want + 16)));
   })()`;
 
   // Reports height the moment content changes. Title-cased channel so it cannot
