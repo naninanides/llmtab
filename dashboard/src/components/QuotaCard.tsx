@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import type { QuotaProvider } from "@/api";
 import {
   barColor,
@@ -15,50 +15,6 @@ export { barColor, resetLabel };
 
 // ── Quotas tab panel — Vitrine, 300px popover ───────────────────────────
 
-/** Providers shown before the list starts scrolling. */
-const MAX_VISIBLE = 2;
-
-/**
- * Height of the first MAX_VISIBLE cards, measured rather than assumed: cards
- * differ in height because providers publish different numbers of windows
- * (Claude has two, OpenCode three), so a fixed guess cuts one mid-row. Returns
- * null until measured, and re-measures when the provider list changes.
- */
-function useVisibleHeight(deps: string): {
-  ref: React.MutableRefObject<HTMLDivElement | null>;
-  max: number | null;
-} {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [max, setMax] = useState<number | null>(null);
-
-  const measure = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const cards = Array.from(el.children) as HTMLElement[];
-    if (cards.length <= MAX_VISIBLE) {
-      setMax(null);
-      return;
-    }
-    const last = cards[MAX_VISIBLE - 1];
-    if (!last) return;
-    // Bottom of the last visible card, relative to the scroll container.
-    setMax(last.offsetTop + last.offsetHeight - (cards[0]?.offsetTop ?? 0));
-  }, []);
-
-  useLayoutEffect(measure, [measure, deps]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    for (const c of Array.from(el.children)) ro.observe(c);
-    return () => ro.disconnect();
-  }, [measure, deps]);
-
-  return { ref, max };
-}
-
 /** Section header with the refresh action. */
 function QuotaHead({ onRetry, count }: { onRetry: () => void; count?: number }): ReactNode {
   return (
@@ -66,10 +22,11 @@ function QuotaHead({ onRetry, count }: { onRetry: () => void; count?: number }):
       <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-text-3">
         Live quotas
       </span>
-      {/* Say how many there are when the list scrolls, so a provider below the
-          fold is known to exist rather than simply missing. */}
-      {count !== undefined && count > MAX_VISIBLE && (
-        <span className="text-[10px] text-text-3">{count} providers · scroll</span>
+      {/* Say how many there are, so a provider below the fold is known to
+          exist rather than simply missing. Whether the list actually scrolls
+          depends on the window height, so this is not gated on a count. */}
+      {count !== undefined && count > 1 && (
+        <span className="text-[10px] text-text-3">{count} providers</span>
       )}
       <button
         onClick={onRetry}
@@ -121,11 +78,6 @@ export function QuotaCard({
   const active = providers.filter((p) => p.status === "ok" && p.windows.length > 0);
   const needsAuth = providers.filter((p) => p.status === "no-auth");
   const errors = providers.filter((p) => p.status === "error" || p.status === "rate-limited");
-
-  // Measured from the rendered cards; null when everything already fits.
-  const { ref: listRef, max: visibleMax } = useVisibleHeight(
-    active.map((p) => p.provider).join(","),
-  );
 
   const checkedLabel = (() => {
     const iso = fetchedAt ?? providers[0]?.checkedAt ?? null;
@@ -212,18 +164,14 @@ export function QuotaCard({
   }
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <QuotaHead onRetry={onRetry} count={active.length} />
 
-      {/* Two providers fit the popover; the rest scroll. Capping the height
-          rather than the list keeps every provider reachable — a limit that
-          hid the third would make a quota you are about to hit invisible.
-          MAX_VISIBLE cards plus their gaps, so the cut never lands mid-card. */}
-      <div
-        ref={listRef}
-        className={visibleMax !== null ? "-mr-[6px] overflow-y-auto pr-[6px]" : undefined}
-        style={visibleMax !== null ? { maxHeight: visibleMax } : undefined}
-      >
+      {/* Only this list scrolls. The panel is bounded by the window, so the
+          providers absorb any overflow while the tabs, the refresh header and
+          the action footer stay put. Nothing is filtered out — a quota you are
+          about to hit has to stay reachable. */}
+      <div className="-mr-[6px] min-h-0 flex-1 overflow-y-auto pr-[6px]">
         {active.map((p) => (
           <div key={p.provider} className="glass-thin mb-[8px] rounded-[10px] px-[10px] py-[9px]">
             <ProviderHead p={p} />

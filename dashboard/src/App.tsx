@@ -1,7 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { RangeProvider, useRange } from "@/hooks/useRange";
 import { useAsync, Skeleton } from "@/hooks/useAsync";
-import { api, rangeParam, type ModelRow, type RangeDef, type SummaryResponse, type ToolRow } from "@/api";
+import {
+  api,
+  rangeParam,
+  type ModelRow,
+  type RangeDef,
+  type SummaryResponse,
+  type ToolRow,
+} from "@/api";
 import { compact, cost, percent } from "@/format";
 import { HeroCard, ModelCards, RangeTabs, StatCard } from "@/components/Cards";
 import { TrendChart } from "@/components/TrendChart";
@@ -52,12 +59,7 @@ function stepsFrom(days: Array<{ totalTokens: number }>): number[] {
 function Backdrop(): ReactNode {
   const heatmap = useAsync(() => api.heatmap(), []);
   const days = heatmap.data?.days ?? [];
-  return (
-    <DataDesktop
-      steps={stepsFrom(days)}
-      recent={days.slice(-30).map((d) => d.totalTokens)}
-    />
-  );
+  return <DataDesktop steps={stepsFrom(days)} recent={days.slice(-30).map((d) => d.totalTokens)} />;
 }
 
 export default function App(): ReactNode {
@@ -69,8 +71,13 @@ export default function App(): ReactNode {
     <RangeProvider>
       <Backdrop />
       {view === "popover" ? (
-        <div className="relative w-full">
-          <div className="relative z-10 mx-auto max-w-[300px] p-2">
+        // Bounded to the window so the page itself never scrolls. The shell
+        // grows the window to fit content only up to 640px; past that the body
+        // used to scroll, which dragged the tabs and footer along with it.
+        // Constraining here keeps the chrome fixed and hands the overflow to
+        // the one list that is meant to absorb it.
+        <div className="relative h-screen w-full overflow-hidden">
+          <div className="relative z-10 mx-auto flex h-full max-w-[300px] flex-col p-2">
             <PopoverView onOpenDashboard={() => setView("dashboard")} />
           </div>
         </div>
@@ -126,7 +133,9 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
   const err = summary.error ?? daily.error ?? tools.error ?? models.error;
   const toolRows = tools.data?.tools ?? [];
   const total = s?.totalTokens ?? 0;
-  const localTokens = toolRows.filter((t) => LOCAL_TOOLS.has(t.tool)).reduce((a, t) => a + t.totalTokens, 0);
+  const localTokens = toolRows
+    .filter((t) => LOCAL_TOOLS.has(t.tool))
+    .reduce((a, t) => a + t.totalTokens, 0);
   const cloudRows = toolRows.filter((t) => !LOCAL_TOOLS.has(t.tool));
   const cloudTokens = cloudRows.reduce((a, t) => a + t.totalTokens, 0);
   const cloudCost = cloudRows.reduce((a, t) => a + t.costUsd, 0);
@@ -161,9 +170,9 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
   }
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <Segmented
-        className="mb-[9px] flex w-full [&>button]:min-w-0 [&>button]:flex-1"
+        className="mb-[9px] flex w-full shrink-0 [&>button]:min-w-0 [&>button]:flex-1"
         size="compact"
         tabs={[
           { id: "usage", label: "Usage" },
@@ -173,13 +182,13 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
         active={popoverTab}
         onChange={(id) => setPopoverTab(id as PopoverTab)}
       />
-      <Panel material="hud" className="overflow-hidden">
+      <Panel material="hud" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Title bar: brand, a dithered drag region, and the range selector.
             Hidden on Quotas — those are live provider limits, so a time range
             means nothing there and the control would be dead. Usage and
             Sources both filter by it, so both keep it. */}
         {popoverTab !== "quotas" && (
-          <div className="border-b border-edge px-[11px] py-[8px]">
+          <div className="shrink-0 border-b border-edge px-[11px] py-[8px]">
             <div className="flex items-center gap-[8px]">
               <GaugeMark className="h-[16px] w-[16px] shrink-0 rounded-[5px]" />
               <span className="text-[12px] font-semibold tracking-[-0.01em]">LLMTab</span>
@@ -209,7 +218,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
         ) : (
           <>
             {popoverTab === "usage" && (
-              <div key="usage" className="panel-in p-[11px]">
+              <div key="usage" className="panel-in min-h-0 flex-1 overflow-y-auto p-[11px]">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-text-3">
                   {CAPTION[period]}
                 </span>
@@ -242,7 +251,9 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
                     <div className="mt-[4px] truncate text-[15px] font-semibold leading-none tracking-[-0.02em] tabular-nums">
                       {tools.loading && !tools.data ? "—" : compact(cloudTokens)}
                     </div>
-                    <div className="mt-[3px] text-[11px] text-text-2 tabular-nums">{cost(cloudCost)} est.</div>
+                    <div className="mt-[3px] text-[11px] text-text-2 tabular-nums">
+                      {cost(cloudCost)} est.
+                    </div>
                   </div>
                   <div className="glass-thin rounded-[10px] px-[9px] py-[8px]">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-3">
@@ -280,7 +291,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
             )}
 
             {popoverTab === "quotas" && (
-              <div key="quotas" className="panel-in p-3">
+              <div key="quotas" className="panel-in flex min-h-0 flex-1 flex-col p-3">
                 <QuotaCard
                   providers={quotas.data?.providers ?? []}
                   loading={quotas.loading}
@@ -292,7 +303,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
             )}
 
             {popoverTab === "sources" && (
-              <div key="sources" className="panel-in p-3">
+              <div key="sources" className="panel-in min-h-0 flex-1 overflow-y-auto p-3">
                 <div className="flex items-center justify-between gap-2">
                   <Segmented
                     size="compact"
@@ -343,16 +354,24 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-[7px] px-[11px] pb-[11px]">
-              <Button className="min-w-0" variant="primary" onClick={() => void syncNow()} disabled={syncing}>
-                <IconRefresh size={12} className={syncing ? "animate-spin motion-reduce:animate-none" : ""} />
+            <div className="grid shrink-0 grid-cols-2 gap-[7px] px-[11px] pb-[11px]">
+              <Button
+                className="min-w-0"
+                variant="primary"
+                onClick={() => void syncNow()}
+                disabled={syncing}
+              >
+                <IconRefresh
+                  size={12}
+                  className={syncing ? "animate-spin motion-reduce:animate-none" : ""}
+                />
                 {syncing ? "Syncing…" : "Sync now"}
               </Button>
               <Button className="min-w-0" onClick={onOpenDashboard}>
                 <IconGrid size={12} /> Dashboard
               </Button>
             </div>
-            <div className="flex items-center justify-between border-t border-edge px-[11px] py-[7px] text-[10px]">
+            <div className="flex shrink-0 items-center justify-between border-t border-edge px-[11px] py-[7px] text-[10px]">
               <button
                 onClick={() => window.open(`${window.location.origin}/dashboard`, "_blank")}
                 className="flex items-center gap-1.5 text-text-3 hover:text-text-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-2"
@@ -364,7 +383,9 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
                   onClick={() => window.close()}
                   className="text-text-3 hover:text-text-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-2"
                 >
-                  {typeof navigator !== "undefined" && navigator.userAgent.includes("Windows") ? "Exit" : "Quit"}
+                  {typeof navigator !== "undefined" && navigator.userAgent.includes("Windows")
+                    ? "Exit"
+                    : "Quit"}
                 </button>
               ) : null}
             </div>
@@ -405,8 +426,18 @@ function GaugeMark({ className = "" }: { className?: string }): ReactNode {
       aria-hidden="true"
     >
       <svg viewBox="0 0 32 32" fill="none" className="h-[70%] w-[70%]">
-        <path d="M4 22a12 12 0 0 1 24 0" stroke="currentColor" strokeWidth="4.6" strokeLinecap="round" />
-        <path d="M16.4 21.6l5.6-4.9" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+        <path
+          d="M4 22a12 12 0 0 1 24 0"
+          stroke="currentColor"
+          strokeWidth="4.6"
+          strokeLinecap="round"
+        />
+        <path
+          d="M16.4 21.6l5.6-4.9"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+        />
         <rect x="13.6" y="20.4" width="4.8" height="4.8" rx="1.2" fill="currentColor" />
       </svg>
     </span>
@@ -428,7 +459,15 @@ function TrendBadge({ pct }: { pct: number }): ReactNode {
   );
 }
 
-function TopSourceRow({ tool, idx, total }: { tool: ToolRow; idx: number; total: number }): ReactNode {
+function TopSourceRow({
+  tool,
+  idx,
+  total,
+}: {
+  tool: ToolRow;
+  idx: number;
+  total: number;
+}): ReactNode {
   const meta = TOOL_META[tool.tool];
   const Icon = meta?.Icon ?? IconTerminal;
   const isLocal = LOCAL_TOOLS.has(tool.tool);
@@ -459,12 +498,23 @@ function TopSourceRow({ tool, idx, total }: { tool: ToolRow; idx: number; total:
 
 const MODEL_BAR_COLORS = ["#34d399", "#38bdf8", "#2dd4bf", "#a78bfa", "#f59e0b"];
 
-function TopModelRow({ model, idx, total }: { model: ModelRow; idx: number; total: number }): ReactNode {
+function TopModelRow({
+  model,
+  idx,
+  total,
+}: {
+  model: ModelRow;
+  idx: number;
+  total: number;
+}): ReactNode {
   const pct = total > 0 ? Math.min(100, (model.totalTokens / total) * 100) : 0;
   return (
     <li>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-1" title={model.model}>
+        <span
+          className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-1"
+          title={model.model}
+        >
           {model.model}
         </span>
         <span className="shrink-0 text-[12px] font-semibold tabular-nums text-text-2">
@@ -478,22 +528,37 @@ function TopModelRow({ model, idx, total }: { model: ModelRow; idx: number; tota
         />
       </div>
       <div className="mt-0.5 text-right text-[11px] text-text-2">
-        {model.costUsd > 0
-          ? `${cost(model.costUsd, { est: true })} est.`
-          : "$0"}
+        {model.costUsd > 0 ? `${cost(model.costUsd, { est: true })} est.` : "$0"}
       </div>
     </li>
   );
 }
 
-function LobeIcon({ src, size = 16, className }: { src: string; size?: number; className?: string }): ReactNode {
+function LobeIcon({
+  src,
+  size = 16,
+  className,
+}: {
+  src: string;
+  size?: number;
+  className?: string;
+}): ReactNode {
   return (
     <span
       className={className}
-      style={{ width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+      style={{
+        width: size,
+        height: size,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
       dangerouslySetInnerHTML={{
         __html: src
-          .replace(/<svg[^>]*>/, `<svg width="${size}" height="${size}" viewBox="0 0 24 24" style="flex:none;line-height:1;width:100%;height:100%">`)
+          .replace(
+            /<svg[^>]*>/,
+            `<svg width="${size}" height="${size}" viewBox="0 0 24 24" style="flex:none;line-height:1;width:100%;height:100%">`,
+          )
           .replace(/fill="[^"]*"/g, 'fill="currentColor"'),
       }}
     />
@@ -563,12 +628,35 @@ function DashboardView({ onBack }: { onBack: () => void }): ReactNode {
 
       {s && (
         <>
-          <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6" aria-label="Totals for range">
-            <StatCard label="Total" value={compact(s.totalTokens)} deltaPct={delta(s.totalTokens, p?.totalTokens)} />
-            <StatCard label="Input" value={compact(s.inputTokens)} deltaPct={delta(s.inputTokens, p?.inputTokens)} />
-            <StatCard label="Output" value={compact(s.outputTokens)} deltaPct={delta(s.outputTokens, p?.outputTokens)} />
-            <StatCard label="Cache read" value={compact(s.cacheReadTokens)} deltaPct={delta(s.cacheReadTokens, p?.cacheReadTokens)} />
-            <StatCard label="Cost" value={cost(s.costUsd, { est: true })} deltaPct={delta(s.costUsd, p?.costUsd)} />
+          <section
+            className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6"
+            aria-label="Totals for range"
+          >
+            <StatCard
+              label="Total"
+              value={compact(s.totalTokens)}
+              deltaPct={delta(s.totalTokens, p?.totalTokens)}
+            />
+            <StatCard
+              label="Input"
+              value={compact(s.inputTokens)}
+              deltaPct={delta(s.inputTokens, p?.inputTokens)}
+            />
+            <StatCard
+              label="Output"
+              value={compact(s.outputTokens)}
+              deltaPct={delta(s.outputTokens, p?.outputTokens)}
+            />
+            <StatCard
+              label="Cache read"
+              value={compact(s.cacheReadTokens)}
+              deltaPct={delta(s.cacheReadTokens, p?.cacheReadTokens)}
+            />
+            <StatCard
+              label="Cost"
+              value={cost(s.costUsd, { est: true })}
+              deltaPct={delta(s.costUsd, p?.costUsd)}
+            />
             <StatCard label="Conversations" value={String(s.conversations)} deltaPct={null} />
           </section>
 
@@ -579,7 +667,12 @@ function DashboardView({ onBack }: { onBack: () => void }): ReactNode {
             localModels={s.localModels ?? []}
           />
 
-          <DashboardQuotaSection providers={quotas.data?.providers ?? []} loading={quotas.loading} error={quotas.error} onRetry={() => quotas.reload()} />
+          <DashboardQuotaSection
+            providers={quotas.data?.providers ?? []}
+            loading={quotas.loading}
+            error={quotas.error}
+            onRetry={() => quotas.reload()}
+          />
 
           {models.data && models.data.models.length > 0 && (
             <ModelCards models={models.data.models} localModels={s.localModels ?? []} />
