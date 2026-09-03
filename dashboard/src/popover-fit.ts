@@ -165,11 +165,16 @@ export function startPopoverFit(maxHeight: number): FitController {
   });
 
   /**
-   * Resize on the way in. Clicking a tab whose height is already known reports
-   * it before React re-renders, so the window moves with the content instead of
-   * chasing it a frame later.
+   * Resize as the click completes, not as it begins.
+   *
+   * Reporting on `mousedown` moved the window between mousedown and mouseup —
+   * the shell resizes *and* re-anchors, so the button travelled out from under
+   * the pointer. macOS still delivered the click; Windows did not synthesise
+   * one at all, so a tab switch needed several attempts. `click` fires only
+   * after both halves have landed on the element, so the switch is already
+   * guaranteed by the time the frame moves.
    */
-  const onPointerDown = (event: Event): void => {
+  const onTabClick = (event: Event): void => {
     const el = event.target;
     if (!(el instanceof Element)) return;
     const tab = el.closest('[role="tab"]');
@@ -196,7 +201,8 @@ export function startPopoverFit(maxHeight: number): FitController {
     if (height !== undefined) report(height);
   };
 
-  document.addEventListener("mousedown", onPointerDown, true);
+  // Bubble phase, not capture: React must see the event first.
+  document.addEventListener("click", onTabClick);
   document.addEventListener("keydown", onKeyDown, true);
   if (root) mutationObserver.observe(root, { childList: true, subtree: true });
   watch();
@@ -205,7 +211,7 @@ export function startPopoverFit(maxHeight: number): FitController {
   const controller: FitController = {
     emit,
     dispose(): void {
-      document.removeEventListener("mousedown", onPointerDown, true);
+      document.removeEventListener("click", onTabClick);
       document.removeEventListener("keydown", onKeyDown, true);
       resizeObserver.disconnect();
       mutationObserver.disconnect();

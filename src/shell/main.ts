@@ -426,12 +426,33 @@ function createPopoverWindow(): void {
     // setBounds rather than setSize + setPosition: one compositor commit, so
     // the frame cannot tear between moving and resizing.
     const b = win.getBounds();
-    const anchor = popoverAnchor(target);
+    // Keep the top edge where it is and let the height change downward.
+    //
+    // Re-anchoring on every resize was the real cause of the Windows tab
+    // switching problem. With the taskbar at the bottom the popover opens
+    // upward, so `popoverAnchor` derives y from the height: switching between a
+    // 519px tab and a 698px one moved the window 179px vertically, sliding the
+    // tab strip out from under the cursor before the click completed. Growing
+    // downward from a fixed top keeps the controls still while the panel
+    // resizes. The anchor is still recomputed on show, so opening always lands
+    // in the right place relative to the tray.
+    const anchored = popoverAnchor(target);
+    let x = anchored.x;
+    let y = anchored.y;
+    if (win.isVisible()) {
+      // Hold the top edge, but not past the edge of the work area: growing a
+      // 519px popover to 698px from a pinned top would run under the taskbar,
+      // so it shifts up by only as much as it must.
+      const area = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
+      const margin = 8;
+      const lowestTop = area.y + area.height - target - margin;
+      x = b.x;
+      y = Math.max(area.y + margin, Math.min(b.y, lowestTop));
+    }
     // Windows raises blur when a visible frameless always-on-top window is
-    // resized, and the blur handler hides the popover — so a tab switch hid the
-    // window and swallowed the click, which is why it took several tries.
+    // resized, and the blur handler hides the popover.
     suppressBlurUntil = Date.now() + BLUR_GRACE_MS;
-    win.setBounds({ x: anchor.x, y: anchor.y, width: b.width, height: target }, false);
+    win.setBounds({ x, y, width: b.width, height: target }, false);
   };
 
   const applyHeight = (raw: unknown): void => {
