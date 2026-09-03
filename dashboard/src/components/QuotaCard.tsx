@@ -1,6 +1,13 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { QuotaProvider } from "@/api";
-import { barColor, resetLabel, pctForWindow, shouldDrawMeter, formatWindowValue, toneFor } from "@/quota";
+import {
+  barColor,
+  resetLabel,
+  pctForWindow,
+  shouldDrawMeter,
+  formatWindowValue,
+  toneFor,
+} from "@/quota";
 import { Meter, Button } from "@/components/glass";
 
 // Re-export for callers that imported from here (BlockMeter previously did)
@@ -8,13 +15,62 @@ export { barColor, resetLabel };
 
 // ── Quotas tab panel — Vitrine, 300px popover ───────────────────────────
 
+/** Providers shown before the list starts scrolling. */
+const MAX_VISIBLE = 2;
+
+/**
+ * Height of the first MAX_VISIBLE cards, measured rather than assumed: cards
+ * differ in height because providers publish different numbers of windows
+ * (Claude has two, OpenCode three), so a fixed guess cuts one mid-row. Returns
+ * null until measured, and re-measures when the provider list changes.
+ */
+function useVisibleHeight(deps: string): {
+  ref: React.MutableRefObject<HTMLDivElement | null>;
+  max: number | null;
+} {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [max, setMax] = useState<number | null>(null);
+
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const cards = Array.from(el.children) as HTMLElement[];
+    if (cards.length <= MAX_VISIBLE) {
+      setMax(null);
+      return;
+    }
+    const last = cards[MAX_VISIBLE - 1];
+    if (!last) return;
+    // Bottom of the last visible card, relative to the scroll container.
+    setMax(last.offsetTop + last.offsetHeight - (cards[0]?.offsetTop ?? 0));
+  }, []);
+
+  useLayoutEffect(measure, [measure, deps]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    for (const c of Array.from(el.children)) ro.observe(c);
+    return () => ro.disconnect();
+  }, [measure, deps]);
+
+  return { ref, max };
+}
+
 /** Section header with the refresh action. */
-function QuotaHead({ onRetry }: { onRetry: () => void }): ReactNode {
+function QuotaHead({ onRetry, count }: { onRetry: () => void; count?: number }): ReactNode {
   return (
     <div className="mb-[8px] flex items-center gap-[10px]">
       <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-text-3">
         Live quotas
       </span>
+      {/* Say how many there are when the list scrolls, so a provider below the
+          fold is known to exist rather than simply missing. */}
+      {count !== undefined && count > MAX_VISIBLE && (
+        <span className="text-[10px] text-text-3">{count} providers · scroll</span>
+      )}
       <button
         onClick={onRetry}
         title="Refresh quotas (5-min cache, force bypass)"
@@ -65,6 +121,11 @@ export function QuotaCard({
   const active = providers.filter((p) => p.status === "ok" && p.windows.length > 0);
   const needsAuth = providers.filter((p) => p.status === "no-auth");
   const errors = providers.filter((p) => p.status === "error" || p.status === "rate-limited");
+
+  // Measured from the rendered cards; null when everything already fits.
+  const { ref: listRef, max: visibleMax } = useVisibleHeight(
+    active.map((p) => p.provider).join(","),
+  );
 
   const checkedLabel = (() => {
     const iso = fetchedAt ?? providers[0]?.checkedAt ?? null;
@@ -152,53 +213,67 @@ export function QuotaCard({
 
   return (
     <div>
-      <QuotaHead onRetry={onRetry} />
+      <QuotaHead onRetry={onRetry} count={active.length} />
 
-      {active.map((p) => (
-        <div key={p.provider} className="glass-thin mb-[8px] rounded-[10px] px-[10px] py-[9px]">
-          <ProviderHead p={p} />
-          <ul className="space-y-[8px]">
-            {p.windows.map((w) => {
-              const pct = pctForWindow(w);
-              const draws = shouldDrawMeter(w);
-              const tone = pct !== null ? toneFor(pct) : null;
-              const valText = formatWindowValue(w);
-              const reset = w.resetsAt ? resetLabel(w.resetsAt) : "";
-              return (
-                <li key={w.label}>
-                  <div className="flex items-baseline justify-between gap-[10px] text-[11px]">
-                    <span className="text-text-2">{w.label}</span>
-                    <b
-                      className={`text-[12px] font-semibold tabular-nums ${
-                        tone === "crit" ? "text-danger" : tone === "warm" ? "text-warn" : "text-text-1"
-                      }`}
-                    >
-                      {w.format === "percent"
-                        ? `${Math.round(pct ?? 0)}%`
-                        : w.format === "dollars"
-                          ? `$${w.used.toFixed(2)}${w.limit > 0 ? ` of $${w.limit.toFixed(0)}` : ""}`
-                          : `${w.used} used`}
-                      {/* Keep the full value available to screen readers. */}
-                      <span className="sr-only">
-                        {valText}
-                        {reset ? `, ${reset}` : ""}
-                      </span>
-                    </b>
-                  </div>
-                  {draws && pct !== null && <Meter pct={pct} className="mt-[6px] h-[5px]" />}
-                  {/* A count window has no published limit, so no meter is drawn
+      {/* Two providers fit the popover; the rest scroll. Capping the height
+          rather than the list keeps every provider reachable — a limit that
+          hid the third would make a quota you are about to hit invisible.
+          MAX_VISIBLE cards plus their gaps, so the cut never lands mid-card. */}
+      <div
+        ref={listRef}
+        className={visibleMax !== null ? "-mr-[6px] overflow-y-auto pr-[6px]" : undefined}
+        style={visibleMax !== null ? { maxHeight: visibleMax } : undefined}
+      >
+        {active.map((p) => (
+          <div key={p.provider} className="glass-thin mb-[8px] rounded-[10px] px-[10px] py-[9px]">
+            <ProviderHead p={p} />
+            <ul className="space-y-[8px]">
+              {p.windows.map((w) => {
+                const pct = pctForWindow(w);
+                const draws = shouldDrawMeter(w);
+                const tone = pct !== null ? toneFor(pct) : null;
+                const valText = formatWindowValue(w);
+                const reset = w.resetsAt ? resetLabel(w.resetsAt) : "";
+                return (
+                  <li key={w.label}>
+                    <div className="flex items-baseline justify-between gap-[10px] text-[11px]">
+                      <span className="text-text-2">{w.label}</span>
+                      <b
+                        className={`text-[12px] font-semibold tabular-nums ${
+                          tone === "crit"
+                            ? "text-danger"
+                            : tone === "warm"
+                              ? "text-warn"
+                              : "text-text-1"
+                        }`}
+                      >
+                        {w.format === "percent"
+                          ? `${Math.round(pct ?? 0)}%`
+                          : w.format === "dollars"
+                            ? `$${w.used.toFixed(2)}${w.limit > 0 ? ` of $${w.limit.toFixed(0)}` : ""}`
+                            : `${w.used} used`}
+                        {/* Keep the full value available to screen readers. */}
+                        <span className="sr-only">
+                          {valText}
+                          {reset ? `, ${reset}` : ""}
+                        </span>
+                      </b>
+                    </div>
+                    {draws && pct !== null && <Meter pct={pct} className="mt-[6px] h-[5px]" />}
+                    {/* A count window has no published limit, so no meter is drawn
                       — say why rather than leaving a value with no context. */}
-                  {!draws && w.format === "count" && (
-                    <div className="mt-[3px] text-[10px] text-text-3">No published limit</div>
-                  )}
-                  {reset && <div className="mt-[4px] text-[10px] text-text-3">{reset}</div>}
-                </li>
-              );
-            })}
-          </ul>
-          {p.warning && <p className="mt-[7px] text-[11px] text-warn">{p.warning}</p>}
-        </div>
-      ))}
+                    {!draws && w.format === "count" && (
+                      <div className="mt-[3px] text-[10px] text-text-3">No published limit</div>
+                    )}
+                    {reset && <div className="mt-[4px] text-[10px] text-text-3">{reset}</div>}
+                  </li>
+                );
+              })}
+            </ul>
+            {p.warning && <p className="mt-[7px] text-[11px] text-warn">{p.warning}</p>}
+          </div>
+        ))}
+      </div>
 
       {needsAuth.length > 0 && (
         <p className="mt-[10px] text-[11px] leading-[1.55] text-text-2">

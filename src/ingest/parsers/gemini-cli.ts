@@ -31,6 +31,10 @@ export const geminiCliParser: Parser = {
     const records: UsageRecord[] = [];
     let linesRead = 0;
     let linesSkipped = 0;
+    // How many times an identical turn has already been seen in this file, so
+    // two genuine repeats in the same second stay distinct without making the
+    // key depend on position.
+    const seen = new Map<string, number>();
 
     for (const rawLine of content.split("\n")) {
       const line = rawLine.trim();
@@ -59,8 +63,24 @@ export const geminiCliParser: Parser = {
       const sessionId = ctx.sessionId ?? "unknown";
       const model = typeof gl.message?.model === "string" ? gl.message.model : "gemini";
 
+      // Gemini chunks carry no message id, so identity is the turn's own
+      // content plus how many identical turns preceded it. The previous key
+      // used `records.length` — the ordinal among matched records — which
+      // shifted whenever a line was prepended or an earlier line gained usage
+      // between syncs, re-keying a turn already stored and counting it twice.
+      const shape = `${model}:${prompt}:${candidates}:${thoughts}:${cached}`;
+      const nth = seen.get(shape) ?? 0;
+      seen.set(shape, nth + 1);
+      const identity = nth === 0 ? shape : `${shape}#${nth}`;
+
       records.push({
-        dedupKey: dedupKey(ctx.tool, sessionId, String(records.length), timestamp),
+        // Gemini chunks carry no message id, so identity is the turn's own
+        // content: model plus the four counts, alongside session and timestamp.
+        // The previous key used `records.length` — the ordinal among matched
+        // records — which shifted whenever a line was prepended or an earlier
+        // line gained usage between syncs, re-keying a turn already stored and
+        // counting it twice.
+        dedupKey: dedupKey(ctx.tool, sessionId, identity, timestamp),
         tool: ctx.tool,
         model,
         inputTokens: prompt - cached,
