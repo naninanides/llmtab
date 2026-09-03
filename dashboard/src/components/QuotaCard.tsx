@@ -171,10 +171,7 @@ export function QuotaCard({
           providers absorb any overflow while the tabs, the refresh header and
           the action footer stay put. Nothing is filtered out — a quota you are
           about to hit has to stay reachable. */}
-      <div
-        data-fit-grow
-        className="-mr-[6px] min-h-0 flex-1 overflow-y-auto pr-[6px] [flex-basis:auto] [flex-grow:0]"
-      >
+      <div className="-mr-[6px] min-h-0 flex-1 overflow-y-auto pr-[6px] [flex-basis:auto] [flex-grow:0]">
         {active.map((p) => (
           <div key={p.provider} className="glass-thin mb-[8px] rounded-[10px] px-[10px] py-[9px]">
             <ProviderHead p={p} />
