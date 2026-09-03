@@ -381,18 +381,22 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
                 <IconGrid size={12} /> Dashboard
               </Button>
             </div>
-            <div className="flex shrink-0 items-center justify-between border-t border-edge px-[11px] py-[7px] text-[10px]">
+            {/* `relative` so the version can centre on the footer itself.
+                Sitting in the flex flow, `justify-between` spaced it against
+                its neighbours instead — and since "Open web app" is wider than
+                "Quit", it settled right of centre. */}
+            <div className="relative flex shrink-0 items-center justify-between border-t border-edge px-[11px] py-[7px] text-[10px]">
               <button
                 onClick={() => window.open(`${window.location.origin}/dashboard`, "_blank")}
-                className="flex items-center gap-1.5 text-text-3 hover:text-text-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-2"
+                className="relative z-[1] flex items-center gap-1.5 text-text-3 hover:text-text-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-2"
               >
                 <IconExternal size={10} /> Open web app
               </button>
-              <AppVersion />
+              <AppVersion className="pointer-events-none absolute left-1/2 -translate-x-1/2" />
               {IS_ELECTRON ? (
                 <button
                   onClick={() => window.close()}
-                  className="text-text-3 hover:text-text-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-2"
+                  className="relative z-[1] text-text-3 hover:text-text-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-2"
                 >
                   {typeof navigator !== "undefined" && navigator.userAgent.includes("Windows")
                     ? "Exit"
