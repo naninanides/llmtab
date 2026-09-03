@@ -102,13 +102,19 @@ async function bootstrap(): Promise<void> {
   // Left-click HANYA toggle popover (tanpa menu), right-click HANYA menu (hide popover).
   // Ini mencegah 2 layer muncul bersamaan seperti di screenshot.
   createPopoverWindow();
-  tray.on("click", () => togglePopover());
+  tray.on("click", () => trayToggle());
   tray.on("right-click", () => {
     // Hide popover dulu agar tidak overlap 2 layer
     if (win && !win.isDestroyed() && win.isVisible()) win.hide();
     if (contextMenu && tray) tray.popUpContextMenu(contextMenu);
   });
-  tray.on("double-click", () => togglePopover());
+  // Windows raises click, click, double-click for one double-click, which
+  // toggled three times and left the popover hidden. `double-click` is left
+  // unbound there: the two clicks it also emits already toggle. macOS keeps the
+  // handler, where the events do not overlap this way.
+  if (process.platform === "darwin") {
+    tray.on("double-click", () => trayToggle());
+  }
 }
 
 async function refreshTray(db: DatabaseSync): Promise<void> {
@@ -356,6 +362,13 @@ function createPopoverWindow(): void {
     (winOpts as Record<string, unknown>).vibrancy = "popover";
     (winOpts as Record<string, unknown>).type = "panel";
     winOpts.roundedCorners = true;
+  } else {
+    // Windows: a frameless skipTaskbar window is not reliably focusable unless
+    // asked for explicitly, and without focus the renderer never receives the
+    // click that switches tabs. `alwaysOnTop` alone keeps it visible but not
+    // interactive, which is the unresponsive feel reported on Windows.
+    winOpts.focusable = true;
+    winOpts.acceptFirstMouse = true;
   }
   win = new BrowserWindow(winOpts);
   if (isMac) {
@@ -368,6 +381,13 @@ function createPopoverWindow(): void {
   // the content changed, which read as a lurch. The interval below is only a
   // safety net for the rare change an observer misses.
   let fitTimer: NodeJS.Timeout | null = null;
+  /**
+   * Blur raised by our own setBounds is not the user clicking away. Windows
+   * fires it on every resize of a frameless always-on-top window; macOS does
+   * not, so this changes nothing there.
+   */
+  const BLUR_GRACE_MS = 250;
+  let suppressBlurUntil = 0;
 
   // Upper bound for the popover. 640 was a flat constant that ignored the
   // display: two providers publishing three windows each need ~682px, so the
@@ -407,6 +427,10 @@ function createPopoverWindow(): void {
     // the frame cannot tear between moving and resizing.
     const b = win.getBounds();
     const anchor = popoverAnchor(target);
+    // Windows raises blur when a visible frameless always-on-top window is
+    // resized, and the blur handler hides the popover — so a tab switch hid the
+    // window and swallowed the click, which is why it took several tries.
+    suppressBlurUntil = Date.now() + BLUR_GRACE_MS;
     win.setBounds({ x: anchor.x, y: anchor.y, width: b.width, height: target }, false);
   };
 
@@ -481,6 +505,8 @@ function createPopoverWindow(): void {
   win.on("blur", () => {
     if (win?.isDestroyed() || !win?.isVisible()) return;
     if (win.webContents.isDevToolsOpened()) return;
+    // A blur we caused by resizing is not the user dismissing the popover.
+    if (Date.now() < suppressBlurUntil) return;
     win.hide();
   });
   win.webContents.on("dom-ready", () => {
@@ -493,6 +519,21 @@ function createPopoverWindow(): void {
     win = null;
   });
   void win.loadURL(`http://localhost:${dashboardPort}`);
+}
+
+/**
+ * Debounces tray activations. Windows emits several events for one physical
+ * click on the tray icon, so toggling per event fought itself and the popover
+ * appeared to need repeated clicking.
+ */
+const TRAY_TOGGLE_GUARD_MS = 350;
+let lastTrayToggle = 0;
+
+function trayToggle(): void {
+  const now = Date.now();
+  if (now - lastTrayToggle < TRAY_TOGGLE_GUARD_MS) return;
+  lastTrayToggle = now;
+  togglePopover();
 }
 
 function ensurePopoverWindow(): void {
