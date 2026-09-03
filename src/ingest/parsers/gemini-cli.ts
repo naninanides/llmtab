@@ -31,12 +31,18 @@ export const geminiCliParser: Parser = {
     const records: UsageRecord[] = [];
     let linesRead = 0;
     let linesSkipped = 0;
-    // How many times an identical turn has already been seen in this file, so
-    // two genuine repeats in the same second stay distinct without making the
-    // key depend on position.
-    const seen = new Map<string, number>();
+    // Byte position of the current line within the source file. An incremental
+    // sync passes only the bytes appended since the last run, so a counter of
+    // "identical turns seen so far" restarts each sync and re-keys turns that
+    // are already stored — they then collide on insert and are dropped. The
+    // absolute offset does not restart, so it identifies a turn for the life of
+    // the file.
+    const base = ctx.startOffset ?? 0;
+    let cursor = 0;
 
     for (const rawLine of content.split("\n")) {
+      const lineOffset = base + cursor;
+      cursor += rawLine.length + 1; // +1 for the newline split() removed
       const line = rawLine.trim();
       if (line === "") continue;
       linesRead++;
@@ -63,15 +69,12 @@ export const geminiCliParser: Parser = {
       const sessionId = ctx.sessionId ?? "unknown";
       const model = typeof gl.message?.model === "string" ? gl.message.model : "gemini";
 
-      // Gemini chunks carry no message id, so identity is the turn's own
-      // content plus how many identical turns preceded it. The previous key
-      // used `records.length` — the ordinal among matched records — which
-      // shifted whenever a line was prepended or an earlier line gained usage
-      // between syncs, re-keying a turn already stored and counting it twice.
-      const shape = `${model}:${prompt}:${candidates}:${thoughts}:${cached}`;
-      const nth = seen.get(shape) ?? 0;
-      seen.set(shape, nth + 1);
-      const identity = nth === 0 ? shape : `${shape}#${nth}`;
+      // Gemini chunks carry no message id, so identity is the line's absolute
+      // byte offset in the file. That is stable across syncs and unaffected by
+      // whether an earlier line was rewritten, which the two previous schemes
+      // were not: `records.length` shifted when a line was prepended, and a
+      // per-call occurrence counter restarted on every incremental sync.
+      const identity = `@${lineOffset}`;
 
       records.push({
         // Gemini chunks carry no message id, so identity is the turn's own

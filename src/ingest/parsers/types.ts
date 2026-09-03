@@ -6,6 +6,13 @@ export interface ParseContext {
   project?: string | null;
   /** session id derived by the scanner (e.g. parent dir name) */
   sessionId?: string | null;
+  /**
+   * Byte offset this content starts at within its source file. Incremental
+   * syncs hand a parser only the bytes appended since the last run, so a
+   * position within `content` is not unique across syncs; adding this makes
+   * it absolute. Defaults to 0 for a whole-file parse.
+   */
+  startOffset?: number;
 }
 
 /**

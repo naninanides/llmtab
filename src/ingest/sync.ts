@@ -114,7 +114,7 @@ function syncFileTool(
   for (const delta of deltas) {
     try {
       const content = readDelta(delta);
-      const ctx = fileContext(tool, delta.path);
+      const ctx = { ...fileContext(tool, delta.path), startOffset: delta.startOffset };
       const outcome = parser.parse(content, ctx);
       if (!outcome.ok) {
         skipped += 1;
