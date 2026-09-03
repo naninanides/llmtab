@@ -446,7 +446,7 @@ function createPopoverWindow(): void {
       try { prev.ro && prev.ro.disconnect(); } catch {}
       try { prev.mo && prev.mo.disconnect(); } catch {}
     }
-    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null, known: {} };
+    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null, known: {}, last: 0 };
     window.__llmtabFit = state;
 
     /** Which tab is selected, used as the cache key. */
@@ -465,12 +465,22 @@ function createPopoverWindow(): void {
     // settles late (a font swap, an image), coalesced so a burst of mutations
     // produces at most one extra resize.
     let trailing = false;
+    // Only report a height that differs from the last one sent. Rapid
+    // switching otherwise emitted the same value repeatedly — the prediction,
+    // the measurement and the trailing correction all agree once a tab has
+    // been seen — and each report crossed to the main process for nothing.
+    const report = (h) => {
+      if (typeof h !== 'number' || !isFinite(h)) return;
+      if (state.last === h) return;
+      state.last = h;
+      try { console.debug('LLMTAB_FIT:' + h); } catch {}
+    };
     const send = () => {
       try {
         const h = ${MEASURE};
         const tab = currentTab();
         if (tab) state.known[tab] = h;
-        console.debug('LLMTAB_FIT:' + h);
+        report(h);
       } catch {}
     };
     const emit = () => {
@@ -500,9 +510,7 @@ function createPopoverWindow(): void {
       if (!tab) return;
       const label = (tab.textContent || '').trim();
       const h = state.known[label];
-      if (typeof h === 'number') {
-        try { console.debug('LLMTAB_FIT:' + h); } catch {}
-      }
+      if (typeof h === 'number') report(h);
     }, true);
 
     state.mo = new MutationObserver(() => { watch(); emit(); });
@@ -513,22 +521,59 @@ function createPopoverWindow(): void {
     return true;
   })()`;
 
+  // Every tab switch reports its height more than once — the prediction on
+  // mousedown, the measurement after the render, and a trailing correction.
+  // Applying each one resized the frame repeatedly, and switching quickly made
+  // the window chase heights from tabs already left behind. Only the newest
+  // target is worth applying, so writes are coalesced onto the next tick and
+  // the intermediate values are dropped.
+  let pendingHeight: number | null = null;
+  let flushTimer: NodeJS.Timeout | null = null;
+
+  const flushHeight = (): void => {
+    flushTimer = null;
+    const target = pendingHeight;
+    pendingHeight = null;
+    if (target === null) return;
+    if (!win || win.isDestroyed() || !win.isVisible()) return;
+    const [, curH] = win.getSize() as [number, number];
+    // 4px deadband: ignore sub-pixel churn, act on real layout changes.
+    if (curH !== undefined && Math.abs(curH - target) <= 4) return;
+
+    // setBounds rather than setSize + setPosition: one compositor commit, so
+    // the frame cannot tear between moving and resizing.
+    const b = win.getBounds();
+    const anchor = popoverAnchor(target);
+    win.setBounds({ x: anchor.x, y: anchor.y, width: b.width, height: target }, false);
+  };
+
   const applyHeight = (raw: unknown): void => {
     if (!win || win.isDestroyed() || !win.isVisible()) return;
     const target = Number(raw);
     if (!Number.isFinite(target) || target <= 0) return;
-    const [, curH] = win.getSize() as [number, number];
-    if (curH === undefined || Math.abs(curH - target) <= 4) return;
+    pendingHeight = Math.round(target);
 
-    // The frame is resized in one call rather than setSize + setPosition.
-    // Animating the size and then immediately setting the position cancelled
-    // the animation mid-flight, which is what made the change look stiff, and
-    // setBounds moves both in a single compositor commit so the window cannot
-    // tear between the two.
-    const h = Math.round(target);
-    const b = win.getBounds();
-    const anchor = popoverAnchor(h);
-    win.setBounds({ x: anchor.x, y: anchor.y, width: b.width, height: h }, false);
+    const [, curH] = win.getSize() as [number, number];
+    const settled = curH !== undefined && Math.abs(curH - pendingHeight) <= 4;
+    if (settled) {
+      // Already the right size — drop any scheduled write rather than let a
+      // stale one fire after the user has landed.
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      return;
+    }
+
+    // Clicking through tabs faster than the frame can settle used to resize the
+    // window once per tab passed through, which is the stutter. Restarting the
+    // timer on every report means only the tab actually settled on is drawn.
+    //
+    // 45ms is above a comfortable rapid-click interval (~25ms) so a burst
+    // collapses to one resize, and below the ~100ms at which a deliberate
+    // single switch would start to feel like it lagged behind the click.
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = setTimeout(flushHeight, 45);
   };
 
   const fitPopoverHeight = async (): Promise<void> => {
