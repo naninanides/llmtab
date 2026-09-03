@@ -293,6 +293,27 @@ async function syncNow(): Promise<void> {
   await refreshTray(db);
 }
 
+/** Where the popover should sit for a given height, anchored to the tray. */
+function popoverAnchor(height?: number): { x: number; y: number } {
+  const fallback = win ? win.getBounds() : { x: 0, y: 0, width: 300, height: 240 };
+  if (!win || win.isDestroyed() || !tray) return { x: fallback.x, y: fallback.y };
+  const trayBounds = tray.getBounds();
+  const b = win.getBounds();
+  const winBounds = { ...b, height: height ?? b.height };
+  const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
+  let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
+  let y = Math.round(trayBounds.y + trayBounds.height + 6);
+  const margin = 8;
+  const maxX = display.bounds.x + display.bounds.width - winBounds.width - margin;
+  const minX = display.bounds.x + margin;
+  x = Math.max(minX, Math.min(x, maxX));
+  const isTop = trayBounds.y < display.bounds.y + display.bounds.height / 2;
+  if (!isTop) y = Math.round(trayBounds.y - winBounds.height - 6);
+  const maxY = display.bounds.y + display.bounds.height - winBounds.height - margin;
+  y = Math.max(display.bounds.y + margin, Math.min(y, maxY));
+  return { x, y };
+}
+
 function positionWindow(): void {
   if (!win || win.isDestroyed() || !tray) return;
   const trayBounds = tray.getBounds();
@@ -427,8 +448,21 @@ function createPopoverWindow(): void {
     }
     const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null };
     window.__llmtabFit = state;
+    // A MutationObserver fires while React is still committing, so measuring
+    // immediately can catch a half-built tab and report a height that is
+    // corrected a frame later — the visible double-step. Reading after the
+    // next paint measures the finished layout, and coalescing repeated calls
+    // into one frame keeps a burst of mutations to a single resize.
+    let queued = false;
     const emit = () => {
-      try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          queued = false;
+          try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
+        });
+      });
     };
     state.ro = new ResizeObserver(emit);
     const watch = () => {
@@ -452,14 +486,17 @@ function createPopoverWindow(): void {
     const target = Number(raw);
     if (!Number.isFinite(target) || target <= 0) return;
     const [, curH] = win.getSize() as [number, number];
-    // 4px deadband: ignore sub-pixel churn, act on real layout changes.
-    if (curH !== undefined && Math.abs(curH - target) > 4) {
-      // Animate on macOS, where the platform interpolates the frame for us and
-      // the fade lands inside a window that is already moving. Windows has no
-      // equivalent, so an animated setSize there just delays the paint.
-      win.setSize(300, Math.round(target), process.platform === "darwin");
-      positionWindow();
-    }
+    if (curH === undefined || Math.abs(curH - target) <= 4) return;
+
+    // The frame is resized in one call rather than setSize + setPosition.
+    // Animating the size and then immediately setting the position cancelled
+    // the animation mid-flight, which is what made the change look stiff, and
+    // setBounds moves both in a single compositor commit so the window cannot
+    // tear between the two.
+    const h = Math.round(target);
+    const b = win.getBounds();
+    const anchor = popoverAnchor(h);
+    win.setBounds({ x: anchor.x, y: anchor.y, width: b.width, height: h }, false);
   };
 
   const fitPopoverHeight = async (): Promise<void> => {

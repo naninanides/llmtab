@@ -280,14 +280,17 @@ span svg {
    cost a layout pass or delay the window resize. */
 @keyframes panel-in {
   from {
-    opacity: 0;
+    opacity: 0.45;
   }
   to {
     opacity: 1;
   }
 }
 .panel-in {
-  animation: panel-in 140ms ease-out both;
+  /* Starts partly visible and runs short: a full fade from zero left the panel
+     blank for the whole window resize, which read as a stall rather than a
+     transition. */
+  animation: panel-in 90ms ease-out both;
 }
 @media (prefers-reduced-motion: reduce) {
   .panel-in {
