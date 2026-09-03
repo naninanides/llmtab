@@ -218,7 +218,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
         ) : (
           <>
             {popoverTab === "usage" && (
-              <div key="usage" className="panel-in min-h-0 flex-1 overflow-y-auto p-[11px]">
+              <div key="usage" className="panel-in min-h-0 shrink overflow-y-auto p-[11px]">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-text-3">
                   {CAPTION[period]}
                 </span>
@@ -303,7 +303,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
             )}
 
             {popoverTab === "sources" && (
-              <div key="sources" className="panel-in min-h-0 flex-1 overflow-y-auto p-3">
+              <div key="sources" className="panel-in min-h-0 shrink overflow-y-auto p-3">
                 <div className="flex items-center justify-between gap-2">
                   <Segmented
                     size="compact"
