@@ -448,20 +448,27 @@ function createPopoverWindow(): void {
     }
     const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null };
     window.__llmtabFit = state;
-    // A MutationObserver fires while React is still committing, so measuring
-    // immediately can catch a half-built tab and report a height that is
-    // corrected a frame later — the visible double-step. Reading after the
-    // next paint measures the finished layout, and coalescing repeated calls
-    // into one frame keeps a burst of mutations to a single resize.
-    let queued = false;
+    // Latency is what makes the resize feel late, so the measurement is taken
+    // synchronously in the same task as the DOM change and sent immediately.
+    // MEASURE reads the layout under a lifted height constraint, which forces
+    // its own reflow, so it already sees the committed tab rather than a
+    // half-built one — the earlier double-rAF only added ~32ms before the
+    // window could begin moving.
+    //
+    // A trailing rAF still fires once afterwards to catch anything that
+    // settles late (a font swap, an image), coalesced so a burst of mutations
+    // produces at most one extra resize.
+    let trailing = false;
+    const send = () => {
+      try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
+    };
     const emit = () => {
-      if (queued) return;
-      queued = true;
+      send();
+      if (trailing) return;
+      trailing = true;
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          queued = false;
-          try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
-        });
+        trailing = false;
+        send();
       });
     };
     state.ro = new ResizeObserver(emit);
