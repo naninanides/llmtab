@@ -446,8 +446,14 @@ function createPopoverWindow(): void {
       try { prev.ro && prev.ro.disconnect(); } catch {}
       try { prev.mo && prev.mo.disconnect(); } catch {}
     }
-    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null };
+    const state = { v: ${FIT_VERSION}, ro: null, mo: null, target: null, known: {} };
     window.__llmtabFit = state;
+
+    /** Which tab is selected, used as the cache key. */
+    const currentTab = () => {
+      const sel = document.querySelector('[role="tab"][aria-selected="true"]');
+      return sel ? (sel.textContent || '').trim() : '';
+    };
     // Latency is what makes the resize feel late, so the measurement is taken
     // synchronously in the same task as the DOM change and sent immediately.
     // MEASURE reads the layout under a lifted height constraint, which forces
@@ -460,7 +466,12 @@ function createPopoverWindow(): void {
     // produces at most one extra resize.
     let trailing = false;
     const send = () => {
-      try { console.debug('LLMTAB_FIT:' + ${MEASURE}); } catch {}
+      try {
+        const h = ${MEASURE};
+        const tab = currentTab();
+        if (tab) state.known[tab] = h;
+        console.debug('LLMTAB_FIT:' + h);
+      } catch {}
     };
     const emit = () => {
       send();
@@ -480,6 +491,20 @@ function createPopoverWindow(): void {
         state.target = target;
       }
     };
+    // Resize on the way in, not after. Clicking a tab whose height was measured
+    // on a previous visit sends that height immediately, so the window is
+    // already moving while React renders — the measurement afterwards only
+    // corrects it if the content actually changed size.
+    document.addEventListener('mousedown', (e) => {
+      const tab = e.target && e.target.closest && e.target.closest('[role="tab"]');
+      if (!tab) return;
+      const label = (tab.textContent || '').trim();
+      const h = state.known[label];
+      if (typeof h === 'number') {
+        try { console.debug('LLMTAB_FIT:' + h); } catch {}
+      }
+    }, true);
+
     state.mo = new MutationObserver(() => { watch(); emit(); });
     const root = document.getElementById('root');
     if (root) state.mo.observe(root, { childList: true, subtree: true });
