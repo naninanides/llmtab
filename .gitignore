@@ -15,3 +15,12 @@ packages/desktop/package-lock.json
 test/
 docs/
 design/
+
+# Internal planning and spec documents. README.md, CHANGELOG.md and the
+# package READMEs stay tracked: the root README and CHANGELOG are what the npm
+# page and release notes link to, and packages/desktop/README.md is listed in
+# that package's `files`, so ignoring it would blank its registry page.
+*.md
+!README.md
+!CHANGELOG.md
+!packages/desktop/README.md
