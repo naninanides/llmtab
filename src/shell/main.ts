@@ -34,7 +34,13 @@ let win: BrowserWindow | null = null;
 let dashboardPort = 0;
 let refreshTimer: NodeJS.Timeout | null = null;
 let contextMenu: Menu | null = null;
-let lastWorst: { provider: string; displayName: string; pct: number; resetMs: number | null; label: string } | null = null;
+let lastWorst: {
+  provider: string;
+  displayName: string;
+  pct: number;
+  resetMs: number | null;
+  label: string;
+} | null = null;
 
 interface TodayTotals {
   tokens: number;
@@ -81,7 +87,11 @@ async function bootstrap(): Promise<void> {
   // Set Dock icon on macOS
   const dockIcon = appIcon();
   if (process.platform === "darwin" && dockIcon && app.dock) {
-    try { app.dock.setIcon(dockIcon); } catch { /* ignore */ }
+    try {
+      app.dock.setIcon(dockIcon);
+    } catch {
+      /* ignore */
+    }
   }
 
   tray = new Tray(trayIcon());
@@ -134,7 +144,9 @@ async function refreshTray(db: DatabaseSync): Promise<void> {
       const quotas = await getQuotas();
       const worst = worstWindow(quotas.providers);
       if (worst && worst.pct >= 90) {
-        const resetMs = worst.window.resetsAt ? new Date(worst.window.resetsAt).getTime() - Date.now() : null;
+        const resetMs = worst.window.resetsAt
+          ? new Date(worst.window.resetsAt).getTime() - Date.now()
+          : null;
         lastWorst = {
           provider: worst.provider.provider,
           displayName: worst.provider.displayName,
@@ -349,12 +361,30 @@ function createPopoverWindow(): void {
   // safety net for the rare change an observer misses.
   let fitTimer: NodeJS.Timeout | null = null;
 
+  // Upper bound for the popover. 640 was a flat constant that ignored the
+  // display: two providers publishing three windows each need ~682px, so the
+  // window stopped short and the quota list had to scroll even though there was
+  // room on screen. Bound to the work area instead, leaving space for the menu
+  // bar and a margin, and keep 640 as the floor of that bound so a short screen
+  // still behaves as before.
+  const workArea = screen.getPrimaryDisplay().workAreaSize.height;
+  const MAX_POPOVER_H = Math.max(640, Math.min(900, workArea - 120));
+
+  // The popover is bounded to the window so its chrome stays fixed, which means
+  // scrollHeight reports the clamped height, not what the content actually
+  // wants — the window could never grow past its current size. Ask the scrollable
+  // list how much it is hiding and add that back.
   const MEASURE = `(() => {
     const root = document.getElementById('root');
     const panel = document.querySelector('.glass-hud, .glass');
     const rh = root ? root.scrollHeight : 0;
     const ph = panel ? panel.getBoundingClientRect().height + 16 : 0;
-    return Math.min(640, Math.max(240, Math.max(rh, ph, document.body.scrollHeight)));
+    let hidden = 0;
+    for (const el of document.querySelectorAll('[data-fit-grow]')) {
+      hidden = Math.max(hidden, el.scrollHeight - el.clientHeight);
+    }
+    const want = Math.max(rh, ph, document.body.scrollHeight) + hidden;
+    return Math.min(${MAX_POPOVER_H}, Math.max(240, want));
   })()`;
 
   // Reports height the moment content changes. Title-cased channel so it cannot
@@ -407,7 +437,10 @@ function createPopoverWindow(): void {
     void fitPopoverHeight();
   };
   const stopFit = (): void => {
-    if (fitTimer) { clearInterval(fitTimer); fitTimer = null; }
+    if (fitTimer) {
+      clearInterval(fitTimer);
+      fitTimer = null;
+    }
   };
   win.on("show", () => startFit());
   win.on("hide", () => stopFit());
@@ -481,7 +514,8 @@ function updateMenuBarConfig(patch: MenuBarConfig): void {
     const cfg = readConfig() as { menuBar?: MenuBarConfig } & Record<string, unknown>;
     const next = { ...(cfg.menuBar ?? {}), ...patch };
     // enforce at most 2 pinned tools like OpenUsage
-    if (next.pinnedTools && next.pinnedTools.length > 2) next.pinnedTools = next.pinnedTools.slice(0, 2);
+    if (next.pinnedTools && next.pinnedTools.length > 2)
+      next.pinnedTools = next.pinnedTools.slice(0, 2);
     writeConfig({ menuBar: next } as never);
   } catch {
     // config write is best-effort
@@ -603,7 +637,8 @@ function trayIcon(alert = false): Electron.NativeImage {
   if (useP16) {
     const icon = nativeImage.createFromPath(useP16);
     if (useP32) icon.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(useP32) });
-    else if (p32 && !alert) icon.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(p32) });
+    else if (p32 && !alert)
+      icon.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(p32) });
     if (process.platform === "darwin") icon.setTemplateImage(true);
     return icon;
   }

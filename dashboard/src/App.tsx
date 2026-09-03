@@ -291,7 +291,7 @@ function PopoverView({ onOpenDashboard }: { onOpenDashboard: () => void }): Reac
             )}
 
             {popoverTab === "quotas" && (
-              <div key="quotas" className="panel-in flex min-h-0 flex-1 flex-col p-3">
+              <div key="quotas" className="panel-in flex min-h-0 flex-1 flex-col justify-start p-3">
                 <QuotaCard
                   providers={quotas.data?.providers ?? []}
                   loading={quotas.loading}
